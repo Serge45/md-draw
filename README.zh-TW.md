@@ -61,7 +61,7 @@ npm run compile
 ```
 
 ### 2. 啟動 Extension Development Host 測試
-1. 使用 VS Code 開啟此專案資料夾（`H:\projects\md-draw`）。
+1. 使用 VS Code 開啟此專案資料夾。
 2. 在 Run and Debug 面板選擇並按 **`F5`**：
    - **`Run Markdown Draw Overlay`**：載入本機已安裝套件（可同時測試原生預覽與 MPE 整合）。
    - **`Run Markdown Draw Overlay (Isolated / No Other Extensions)`**：停用其他已裝套件，純淨測試原生預覽。

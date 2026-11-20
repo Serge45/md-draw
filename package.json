@@ -3,7 +3,21 @@
   "displayName": "Markdown Draw Overlay",
   "description": "%description%",
   "version": "0.1.0",
-  "publisher": "md-draw",
+  "publisher": "Serge45",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Serge45/md-draw.git"
+  },
+  "homepage": "https://github.com/Serge45/md-draw#readme",
+  "bugs": {
+    "url": "https://github.com/Serge45/md-draw/issues"
+  },
+  "galleryBanner": {
+    "color": "#1E293B",
+    "theme": "dark"
+  },
   "l10n": "./l10n",
   "engines": {
     "vscode": "^1.85.0"
@@ -59,7 +73,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "check:overlay": "node --check media/overlay.js"
+    "check:overlay": "node --check media/overlay.js",
+    "package": "npx @vscode/vsce package"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -61,7 +61,7 @@ npm run compile
 ```
 
 ### 2. Launch Extension Development Host (`F5`)
-1. Open this repository (`H:\projects\md-draw`) in VS Code.
+1. Open this repository in VS Code.
 2. Open the Run and Debug view and press **`F5`**:
    - **`Run Markdown Draw Overlay`**: Launches with your installed extensions (ideal for testing both Native Preview and MPE coexistence).
    - **`Run Markdown Draw Overlay (Isolated / No Other Extensions)`**: Launches with `--disable-extensions` for clean native-only testing.
