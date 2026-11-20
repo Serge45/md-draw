@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install & Check
@@ -30,10 +30,12 @@ jobs:
           npm run check:overlay
 
       - name: Package .vsix
-        run: npx --yes @vscode/vsce package --out markdown-draw-overlay.vsix
+        run: |
+          npx --yes @vscode/vsce@^4.1.1 --version
+          npx --yes @vscode/vsce@^4.1.1 package --out markdown-draw-overlay.vsix
 
       - name: Publish to VS Code Marketplace (OIDC)
-        run: npx --yes @vscode/vsce publish --oidc --packagePath markdown-draw-overlay.vsix
+        run: npx --yes @vscode/vsce@^4.1.1 publish --oidc --packagePath markdown-draw-overlay.vsix
 
       - name: Attach .vsix to GitHub Release
         if: github.event_name == 'release'
