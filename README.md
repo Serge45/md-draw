@@ -24,10 +24,14 @@ Automatically adapts toolbar styling and adaptive ink contrast between Dark Mode
   - **Browse Mode (Default)**: `pointer-events: none` — select text, copy, scroll, and click links normally.
   - **Draw Mode**: Press `Alt + D` or click the toolbar toggle to start annotating; press `Esc` to return to Browse Mode while keeping strokes visible.
 - **Annotation Tools**:
-  1. **Pen**: Crisp solid strokes.
-  2. **Highlighter**: Semi-transparent wide marker (yellow by default) drawn as a single continuous path with uniform opacity.
-  3. **Laser Pointer**: Glowing red beam that smoothly fades out over **1.5 seconds** after release (excluded from Undo/Redo history).
-  4. **Eraser**: Click to delete an entire stroke, or drag to erase segments cleanly.
+  1. **Pen**: Crisp solid freehand strokes (hold `Shift` for straight lines with magnetic horizontal/vertical snap).
+  2. **Highlighter**: Semi-transparent wide marker (yellow by default) with uniform opacity (hold `Shift` for straight highlights).
+  3. **Arrow**: Directional callout arrow (hold `Shift` to snap to 15° angles).
+  4. **Rectangle**: Rounded outline box to frame code blocks or sections (hold `Shift` for squares).
+  5. **Laser Pointer**: Glowing red beam that smoothly fades out over **1.5 seconds** after release (excluded from Undo/Redo history).
+  6. **Eraser**: Click to delete an entire stroke or shape, or drag to erase segments cleanly.
+- **Per-Document Persistence & Portable `.mdo.json`**: Automatically saves strokes per document across edits/reloads (toggleable in `⋯`), plus one-click `.mdo.json` export & import without touching your `.md` source.
+- **One-Click Annotated PNG Export**: Click the camera button to download a timestamped PNG of the current viewport with your annotations (and copy to clipboard where supported, with automatic fallback under strict CSP).
 - **VS Code Theme-Adaptive & Bilingual UI**: Frosted-glass floating toolbar (`backdrop-filter: blur`) built on VS Code CSS variables, adaptive black/white ink based on actual preview surface luminance, and auto-detected **English / 繁體中文** UI with a 1-click `EN` / `中` toolbar toggle.
 
 ---
@@ -37,7 +41,8 @@ Automatically adapts toolbar styling and adaptive ink contrast between Dark Mode
 | Shortcut | Action |
 | --- | --- |
 | `Alt + D` | Toggle **Browse Mode** / **Draw Mode** |
-| `Esc` | Return to **Browse Mode** (keeps all strokes on screen) |
+| `Esc` | Close menu or return to **Browse Mode** (keeps all strokes on screen) |
+| `Shift + Drag` | Straight line (`Pen` / `Highlighter`), 15° snap (`Arrow`), or Square (`Rectangle`) |
 | `Ctrl + Z` / `Cmd + Z` | Undo |
 | `Ctrl + Y` / `Ctrl + Shift + Z` / `Cmd + Shift + Z` | Redo |
 

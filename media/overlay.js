@@ -7,6 +7,7 @@
   window.__mdoInitialized = true;
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
+  var XHTML_NS = 'http://www.w3.org/1999/xhtml';
   var LASER_FADE_MS = 1500;
   var MAX_HISTORY = 100;
   var MAX_CANVAS_DIM = 16384;
@@ -14,6 +15,12 @@
   var ERASER_CLICK_THRESHOLD = 5;
   var MIN_POINT_DIST = 1.5;
   var EMA_CURRENT_WEIGHT = 0.68;
+  var MAGNETIC_SNAP_RAD = (6 * Math.PI) / 180;
+  var STORAGE_PREFIX = 'mdo.doc.v1.';
+  var STORAGE_INDEX_KEY = 'mdo.doc.index.v1';
+  var STORAGE_AUTOSAVE_KEY = 'mdo.autosave';
+  var MAX_STORED_DOCS = 30;
+  var SAVE_DEBOUNCE_MS = 280;
 
   var PALETTE = [
     { id: 'red', value: '#EF4444', className: 'mdo-color-red' },
@@ -26,11 +33,13 @@
   var SIZE_MAP = {
     pen: [2.5, 4.5, 8],
     highlighter: [14, 22, 32],
+    arrow: [2.5, 4.5, 8],
+    rect: [2.5, 4.5, 8],
     laser: [3.5, 5, 7],
     eraser: [10, 18, 30]
   };
 
-  var TOOL_IDS = ['pen', 'highlighter', 'laser', 'eraser'];
+  var TOOL_IDS = ['pen', 'highlighter', 'arrow', 'rect', 'laser', 'eraser'];
 
   var I18N = {
     en: {
@@ -45,10 +54,12 @@
       collapseToolbar: 'Collapse toolbar',
       expandToolbar: 'Expand toolbar',
       tools: {
-        pen: 'Pen',
-        highlighter: 'Highlighter',
+        pen: 'Pen (hold Shift for straight line)',
+        highlighter: 'Highlighter (hold Shift for straight line)',
+        arrow: 'Arrow (hold Shift for 15° snap)',
+        rect: 'Rectangle (hold Shift for square)',
         laser: 'Laser Pointer (auto-fades in 1.5s)',
-        eraser: 'Eraser (click stroke to delete / drag to erase)'
+        eraser: 'Eraser (click stroke/shape to delete / drag to erase)'
       },
       colors: {
         red: 'Red',
@@ -65,6 +76,25 @@
       redoAria: 'Redo',
       clearTitle: 'Clear all strokes',
       clearAria: 'Clear all strokes',
+      exportTitle: 'Export annotated PNG screenshot & copy to clipboard',
+      exportAria: 'Export PNG screenshot',
+      moreTitle: 'Storage & annotation file options',
+      moreAria: 'More options',
+      autoSaveLabel: 'Auto-save per file',
+      onLabel: 'ON',
+      offLabel: 'OFF',
+      exportJsonLabel: 'Export annotations (.mdo.json)',
+      importJsonLabel: 'Import annotations (.mdo.json)',
+      toastAutoSaveOn: 'Per-file auto-save enabled',
+      toastAutoSaveOff: 'Per-file auto-save disabled',
+      toastJsonExported: 'Exported annotations (.mdo.json)',
+      toastJsonImported: 'Imported {0} annotation(s)',
+      toastJsonInvalid: 'Invalid .mdo.json annotation file',
+      toastExportedBoth: 'PNG downloaded & copied to clipboard',
+      toastExportedFileOnly: 'PNG downloaded',
+      toastExportedFallbackBoth: 'Strict CSP: exported annotation layer PNG & copied',
+      toastExportedFallbackFileOnly: 'Strict CSP: exported annotation layer PNG',
+      toastExportFailed: 'Failed to export PNG screenshot',
       langBadge: 'EN',
       langSwitchTitle: 'Language: English (click to switch to 繁體中文)'
     },
@@ -80,8 +110,10 @@
       collapseToolbar: '收合標註工具列',
       expandToolbar: '展開標註工具列',
       tools: {
-        pen: '畫筆 (Pen)',
-        highlighter: '螢光筆 (Highlighter)',
+        pen: '畫筆 (Pen · 按住 Shift 可拉直線)',
+        highlighter: '螢光筆 (Highlighter · 按住 Shift 可拉直線)',
+        arrow: '箭頭 (Arrow · 按住 Shift 鎖定 15°)',
+        rect: '矩形框 (Rectangle · 按住 Shift 鎖定正方形)',
         laser: '雷射筆 (Laser Pointer · 1.5秒自動漸隱)',
         eraser: '橡皮擦 (Eraser · 點擊刪整條 / 拖曳局部擦除)'
       },
@@ -100,6 +132,25 @@
       redoAria: '重做',
       clearTitle: '一鍵清空所有筆跡',
       clearAria: '清空所有筆跡',
+      exportTitle: '匯出標註截圖 PNG（同時嘗試複製進剪貼簿）',
+      exportAria: '匯出標註截圖',
+      moreTitle: '筆跡記憶與 .mdo.json 匯出/匯入',
+      moreAria: '更多選項',
+      autoSaveLabel: '依文件自動記憶',
+      onLabel: '開',
+      offLabel: '關',
+      exportJsonLabel: '匯出標註檔 (.mdo.json)',
+      importJsonLabel: '匯入標註檔 (.mdo.json)',
+      toastAutoSaveOn: '已開啟依文件自動記憶',
+      toastAutoSaveOff: '已關閉依文件自動記憶',
+      toastJsonExported: '已匯出標註檔 (.mdo.json)',
+      toastJsonImported: '已匯入 {0} 筆標註',
+      toastJsonInvalid: '無效的 .mdo.json 標註檔案',
+      toastExportedBoth: '已下載 PNG 截圖並複製到剪貼簿',
+      toastExportedFileOnly: '已下載 PNG 截圖',
+      toastExportedFallbackBoth: '受 Webview CSP 限制：已改為匯出標註圖層 PNG 並複製',
+      toastExportedFallbackFileOnly: '受 Webview CSP 限制：已改為匯出標註圖層 PNG',
+      toastExportFailed: '匯出 PNG 截圖失敗',
       langBadge: '中',
       langSwitchTitle: '語言：繁體中文（點擊切換為 English）'
     }
@@ -129,10 +180,21 @@
     return String(navLang).toLowerCase().indexOf('zh') === 0 ? 'zh-TW' : 'en';
   }
 
+  function loadAutoSavePref() {
+    try {
+      if (window.localStorage) {
+        return window.localStorage.getItem(STORAGE_AUTOSAVE_KEY) !== '0';
+      }
+    } catch (_err) {
+      // Ignore storage access errors in sandboxed webviews
+    }
+    return true;
+  }
+
   var state = {
     lang: detectInitialLocale(),
     mode: 'browse', // 'browse' | 'draw'
-    tool: 'pen', // 'pen' | 'highlighter' | 'laser' | 'eraser'
+    tool: 'pen', // 'pen' | 'highlighter' | 'arrow' | 'rect' | 'laser' | 'eraser'
     sizeIndex: 1, // 0 = S, 1 = M, 2 = L
     toolColors: {
       pen: '#EF4444',
@@ -142,7 +204,10 @@
     undoStack: [],
     redoStack: [],
     laserStrokes: [],
-    collapsed: false
+    collapsed: false,
+    autoSave: loadAutoSavePref(),
+    popoverOpen: false,
+    isExporting: false
   };
 
   function msg() {
@@ -167,9 +232,12 @@
   var resizeRafId = 0;
   var laserRafId = 0;
   var toastTimerId = 0;
+  var saveTimerId = 0;
   var isReattaching = false;
   var resizeObserver = null;
   var observedMpePreviewEl = null;
+  var currentDocRawId = '';
+  var currentDocKey = '';
 
   // DOM references
   var canvasLayer = null;
@@ -183,6 +251,8 @@
   var modeLabel = null;
   var collapseBtn = null;
   var toastEl = null;
+  var popoverEl = null;
+  var fileInputEl = null;
 
   var toolButtons = {};
   var colorButtons = {};
@@ -190,7 +260,14 @@
   var undoBtn = null;
   var redoBtn = null;
   var clearBtn = null;
+  var exportBtn = null;
   var langBtn = null;
+  var moreBtn = null;
+  var autoSaveItem = null;
+  var autoSaveLabelEl = null;
+  var autoSaveBadge = null;
+  var exportJsonItem = null;
+  var importJsonItem = null;
 
   function createSvgIcon(paths) {
     var svg = document.createElementNS(SVG_NS, 'svg');
@@ -226,6 +303,17 @@
       return createSvgIcon([
         { d: 'm9 11-6 6v3h9l3-3' },
         { d: 'm22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' }
+      ]);
+    }
+    if (toolId === 'arrow') {
+      return createSvgIcon([
+        { d: 'M5 19 19 5' },
+        { d: 'M11 5h8v8' }
+      ]);
+    }
+    if (toolId === 'rect') {
+      return createSvgIcon([
+        { tag: 'rect', x: '4', y: '5', width: '16', height: '14', rx: '2' }
       ]);
     }
     if (toolId === 'laser') {
@@ -266,6 +354,19 @@
         { d: 'M3 6h18' },
         { d: 'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' },
         { d: 'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' }
+      ]);
+    }
+    if (action === 'export') {
+      return createSvgIcon([
+        { d: 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z' },
+        { tag: 'circle', cx: '12', cy: '13', r: '3' }
+      ]);
+    }
+    if (action === 'more') {
+      return createSvgIcon([
+        { tag: 'circle', cx: '5', cy: '12', r: '1.5', fill: 'currentColor', stroke: 'none' },
+        { tag: 'circle', cx: '12', cy: '12', r: '1.5', fill: 'currentColor', stroke: 'none' },
+        { tag: 'circle', cx: '19', cy: '12', r: '1.5', fill: 'currentColor', stroke: 'none' }
       ]);
     }
     if (action === 'collapse') {
@@ -380,6 +481,7 @@
     state.strokes = state.undoStack.pop();
     renderStaticCanvas();
     updateUI();
+    scheduleSaveStrokes();
   }
 
   function redo() {
@@ -393,6 +495,7 @@
     state.strokes = state.redoStack.pop();
     renderStaticCanvas();
     updateUI();
+    scheduleSaveStrokes();
   }
 
   function clearAll() {
@@ -403,6 +506,7 @@
     state.strokes = [];
     renderStaticCanvas();
     updateUI();
+    scheduleSaveStrokes();
     showToast(msg().toastCleared);
   }
 
@@ -464,8 +568,24 @@
     renderLiveCanvas();
   }
 
+  function closePopover() {
+    if (!state.popoverOpen) {
+      return;
+    }
+    state.popoverOpen = false;
+    updateUI();
+  }
+
+  function togglePopover() {
+    state.popoverOpen = !state.popoverOpen;
+    updateUI();
+  }
+
   function toggleCollapsed() {
     state.collapsed = !state.collapsed;
+    if (state.collapsed) {
+      state.popoverOpen = false;
+    }
     updateUI();
   }
 
@@ -578,10 +698,54 @@
     ctx.stroke();
   }
 
-  function drawCommittedStroke(ctx, stroke) {
-    if (!stroke || !stroke.points || stroke.points.length === 0) {
+  function getArrowWingPoints(start, end, width) {
+    var len = dist(start, end);
+    if (len < 4) {
+      return null;
+    }
+    var angle = Math.atan2(end.y - start.y, end.x - start.x);
+    var headLen = Math.min(len * 0.45, Math.max(12, width * 3.4));
+    var headAngle = Math.PI / 6;
+    return [
+      {
+        x: end.x - headLen * Math.cos(angle - headAngle),
+        y: end.y - headLen * Math.sin(angle - headAngle)
+      },
+      {
+        x: end.x - headLen * Math.cos(angle + headAngle),
+        y: end.y - headLen * Math.sin(angle + headAngle)
+      }
+    ];
+  }
+
+  function drawRoundedRectStroke(ctx, start, end) {
+    var x = Math.min(start.x, end.x);
+    var y = Math.min(start.y, end.y);
+    var w = Math.abs(end.x - start.x);
+    var h = Math.abs(end.y - start.y);
+    if (w < 0.5 && h < 0.5) {
       return;
     }
+    var r = Math.min(6, w * 0.15, h * 0.15);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  function drawCommittedStroke(ctx, stroke) {
+    if (!stroke) {
+      return;
+    }
+    var kind = stroke.kind || 'freehand';
     var resolved = resolveColor(stroke.color);
     ctx.save();
     ctx.globalAlpha = stroke.opacity;
@@ -590,7 +754,31 @@
     ctx.lineWidth = stroke.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    drawSmoothPath(ctx, stroke.points, stroke.width);
+
+    if (kind === 'line' && stroke.start && stroke.end) {
+      ctx.beginPath();
+      ctx.moveTo(stroke.start.x, stroke.start.y);
+      ctx.lineTo(stroke.end.x, stroke.end.y);
+      ctx.stroke();
+    } else if (kind === 'arrow' && stroke.start && stroke.end) {
+      ctx.beginPath();
+      ctx.moveTo(stroke.start.x, stroke.start.y);
+      ctx.lineTo(stroke.end.x, stroke.end.y);
+      ctx.stroke();
+      var wings = getArrowWingPoints(stroke.start, stroke.end, stroke.width);
+      if (wings) {
+        ctx.beginPath();
+        ctx.moveTo(wings[0].x, wings[0].y);
+        ctx.lineTo(stroke.end.x, stroke.end.y);
+        ctx.lineTo(wings[1].x, wings[1].y);
+        ctx.stroke();
+      }
+    } else if (kind === 'rect' && stroke.start && stroke.end) {
+      drawRoundedRectStroke(ctx, stroke.start, stroke.end);
+    } else if (stroke.points && stroke.points.length > 0) {
+      drawSmoothPath(ctx, stroke.points, stroke.width);
+    }
+
     ctx.restore();
   }
 
@@ -712,6 +900,100 @@
   }
 
   // Vector Eraser
+  function getShapeSegments(stroke) {
+    var kind = stroke.kind || 'freehand';
+    if (!stroke.start || !stroke.end) {
+      return [];
+    }
+    if (kind === 'line') {
+      return [[stroke.start, stroke.end]];
+    }
+    if (kind === 'arrow') {
+      var segs = [[stroke.start, stroke.end]];
+      var wings = getArrowWingPoints(stroke.start, stroke.end, stroke.width);
+      if (wings) {
+        segs.push([wings[0], stroke.end], [wings[1], stroke.end]);
+      }
+      return segs;
+    }
+    if (kind === 'rect') {
+      var minX = Math.min(stroke.start.x, stroke.end.x);
+      var maxX = Math.max(stroke.start.x, stroke.end.x);
+      var minY = Math.min(stroke.start.y, stroke.end.y);
+      var maxY = Math.max(stroke.start.y, stroke.end.y);
+      var tl = { x: minX, y: minY };
+      var tr = { x: maxX, y: minY };
+      var br = { x: maxX, y: maxY };
+      var bl = { x: minX, y: maxY };
+      return [
+        [tl, tr],
+        [tr, br],
+        [br, bl],
+        [bl, tl]
+      ];
+    }
+    return [];
+  }
+
+  function orientationSign(a, b, c) {
+    var v = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+    if (Math.abs(v) < 1e-6) {
+      return 0;
+    }
+    return v > 0 ? 1 : 2;
+  }
+
+  function onSegmentBox(p, q, r) {
+    return (
+      q.x <= Math.max(p.x, r.x) &&
+      q.x >= Math.min(p.x, r.x) &&
+      q.y <= Math.max(p.y, r.y) &&
+      q.y >= Math.min(p.y, r.y)
+    );
+  }
+
+  function segmentsIntersect(a1, a2, b1, b2) {
+    var o1 = orientationSign(a1, a2, b1);
+    var o2 = orientationSign(a1, a2, b2);
+    var o3 = orientationSign(b1, b2, a1);
+    var o4 = orientationSign(b1, b2, a2);
+    if (o1 !== o2 && o3 !== o4) {
+      return true;
+    }
+    if (o1 === 0 && onSegmentBox(a1, b1, a2)) return true;
+    if (o2 === 0 && onSegmentBox(a1, b2, a2)) return true;
+    if (o3 === 0 && onSegmentBox(b1, a1, b2)) return true;
+    if (o4 === 0 && onSegmentBox(b1, a2, b2)) return true;
+    return false;
+  }
+
+  function distSegmentToSegment(a1, a2, b1, b2) {
+    if (segmentsIntersect(a1, a2, b1, b2)) {
+      return 0;
+    }
+    return Math.sqrt(
+      Math.min(
+        distToSegmentSq(a1, b1, b2),
+        distToSegmentSq(a2, b1, b2),
+        distToSegmentSq(b1, a1, a2),
+        distToSegmentSq(b2, a1, a2)
+      )
+    );
+  }
+
+  function getAnyStrokeBBox(stroke) {
+    var kind = stroke.kind || 'freehand';
+    if (kind === 'freehand') {
+      return getStrokeBBox(stroke.points || []);
+    }
+    var segs = getShapeSegments(stroke);
+    var pts = [];
+    for (var i = 0; i < segs.length; i++) {
+      pts.push(segs[i][0], segs[i][1]);
+    }
+    return getStrokeBBox(pts);
+  }
+
   function eraseAlongSegment(segStart, segEnd) {
     if (state.strokes.length === 0) {
       return false;
@@ -727,8 +1009,9 @@
 
     for (var i = 0; i < state.strokes.length; i++) {
       var stroke = state.strokes[i];
+      var kind = stroke.kind || 'freehand';
       var effectiveRadius = eraserRadius + stroke.width * 0.35;
-      var bbox = getStrokeBBox(stroke.points);
+      var bbox = getAnyStrokeBBox(stroke);
 
       if (
         segMaxX + effectiveRadius < bbox.minX ||
@@ -737,6 +1020,26 @@
         segMinY - effectiveRadius > bbox.maxY
       ) {
         nextStrokes.push(stroke);
+        continue;
+      }
+
+      if (kind !== 'freehand') {
+        var shapeSegs = getShapeSegments(stroke);
+        var hitShape = false;
+        for (var sIdx = 0; sIdx < shapeSegs.length; sIdx++) {
+          if (
+            distSegmentToSegment(segStart, segEnd, shapeSegs[sIdx][0], shapeSegs[sIdx][1]) <=
+            effectiveRadius
+          ) {
+            hitShape = true;
+            break;
+          }
+        }
+        if (hitShape) {
+          changed = true;
+        } else {
+          nextStrokes.push(stroke);
+        }
         continue;
       }
 
@@ -778,6 +1081,7 @@
         changed = true;
         for (var r = 0; r < runs.length; r++) {
           nextStrokes.push({
+            kind: 'freehand',
             tool: stroke.tool,
             color: stroke.color,
             width: stroke.width,
@@ -801,7 +1105,27 @@
     var eraserRadius = SIZE_MAP.eraser[state.sizeIndex] || SIZE_MAP.eraser[1];
     for (var i = state.strokes.length - 1; i >= 0; i--) {
       var stroke = state.strokes[i];
+      var kind = stroke.kind || 'freehand';
       var hitDist = eraserRadius + stroke.width * 0.5 + 3;
+
+      if (kind !== 'freehand') {
+        var shapeSegs = getShapeSegments(stroke);
+        var hitShape = false;
+        for (var s = 0; s < shapeSegs.length; s++) {
+          if (Math.sqrt(distToSegmentSq(pt, shapeSegs[s][0], shapeSegs[s][1])) <= hitDist) {
+            hitShape = true;
+            break;
+          }
+        }
+        if (hitShape) {
+          var nextShapeList = state.strokes.slice();
+          nextShapeList.splice(i, 1);
+          state.strokes = nextShapeList;
+          return true;
+        }
+        continue;
+      }
+
       if (distPointToPolyline(pt, stroke.points) <= hitDist) {
         var next = state.strokes.slice();
         next.splice(i, 1);
@@ -834,12 +1158,83 @@
     return true;
   }
 
+  function snapStraightLine(start, end, mode) {
+    var dx = end.x - start.x;
+    var dy = end.y - start.y;
+    var r = Math.sqrt(dx * dx + dy * dy);
+    if (r < 1) {
+      return { x: end.x, y: end.y };
+    }
+    if (mode === 'square') {
+      var side = Math.max(Math.abs(dx), Math.abs(dy));
+      return {
+        x: start.x + (dx < 0 ? -side : side),
+        y: start.y + (dy < 0 ? -side : side)
+      };
+    }
+    if (mode === 'angle15') {
+      var step = Math.PI / 12;
+      var snapped = Math.round(Math.atan2(dy, dx) / step) * step;
+      return {
+        x: start.x + Math.cos(snapped) * r,
+        y: start.y + Math.sin(snapped) * r
+      };
+    }
+    // Magnetic horizontal/vertical snap within ±6 degrees
+    var angle = Math.atan2(dy, dx);
+    var sinThreshold = Math.sin(MAGNETIC_SNAP_RAD);
+    if (Math.abs(Math.sin(angle)) <= sinThreshold) {
+      return { x: end.x, y: start.y };
+    }
+    if (Math.abs(Math.cos(angle)) <= sinThreshold) {
+      return { x: start.x, y: end.y };
+    }
+    return { x: end.x, y: end.y };
+  }
+
+  function normalizeCommittedStroke(stroke) {
+    if (!stroke) {
+      return null;
+    }
+    var kind = stroke.kind || 'freehand';
+    if (kind === 'line' || kind === 'arrow' || kind === 'rect') {
+      if (!stroke.start || !stroke.end) {
+        return null;
+      }
+      if ((kind === 'arrow' || kind === 'rect') && dist(stroke.start, stroke.end) < 3) {
+        return null;
+      }
+      return {
+        kind: kind,
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        opacity: stroke.opacity,
+        start: { x: stroke.start.x, y: stroke.start.y },
+        end: { x: stroke.end.x, y: stroke.end.y }
+      };
+    }
+    if (!stroke.points || stroke.points.length === 0) {
+      return null;
+    }
+    return {
+      kind: 'freehand',
+      tool: stroke.tool,
+      color: stroke.color,
+      width: stroke.width,
+      opacity: stroke.opacity,
+      points: stroke.points
+    };
+  }
+
   function cancelOrCommitInFlightInteraction() {
     if (activeStroke) {
-      if (activeStroke.points.length > 0) {
+      var committed = normalizeCommittedStroke(activeStroke);
+      if (committed) {
         pushUndoSnapshot(state.strokes.slice());
-        state.strokes = state.strokes.concat([activeStroke]);
+        state.strokes = state.strokes.concat([committed]);
         renderStaticCanvas();
+        scheduleSaveStrokes();
       }
       activeStroke = null;
     }
@@ -850,6 +1245,7 @@
     }
     if (erasePreSnapshot && eraseDidMutate) {
       pushUndoSnapshot(erasePreSnapshot);
+      scheduleSaveStrokes();
     }
     erasePreSnapshot = null;
     eraseDidMutate = false;
@@ -870,6 +1266,7 @@
       return;
     }
 
+    closePopover();
     e.preventDefault();
     activePointerId = e.pointerId;
     if (liveCanvas.setPointerCapture) {
@@ -908,12 +1305,29 @@
       return;
     }
 
+    if (state.tool === 'arrow' || state.tool === 'rect') {
+      activeStroke = {
+        kind: state.tool,
+        tool: state.tool,
+        color: getActiveColor(),
+        width: getActiveWidth(),
+        opacity: 1.0,
+        start: pt,
+        end: pt
+      };
+      renderLiveCanvas();
+      return;
+    }
+
     activeStroke = {
+      kind: e.shiftKey ? 'line' : 'freehand',
       tool: state.tool,
       color: getActiveColor(),
       width: getActiveWidth(),
       opacity: state.tool === 'highlighter' ? 0.35 : 1.0,
-      points: [pt]
+      points: [pt],
+      start: pt,
+      end: pt
     };
     renderLiveCanvas();
   }
@@ -963,15 +1377,51 @@
       return;
     }
 
-    var targetStroke = activeStroke || activeLaserStroke;
-    if (!targetStroke) {
+    if (activeLaserStroke) {
+      var laserAdded = false;
+      for (var l = 0; l < list.length; l++) {
+        var lPt = getCanvasPoint(list[l]);
+        if (appendSmoothedPoint(activeLaserStroke.points, lPt)) {
+          laserAdded = true;
+        }
+      }
+      if (laserAdded) {
+        renderLiveCanvas();
+      }
+      return;
+    }
+
+    if (!activeStroke) {
+      return;
+    }
+
+    var latestPt = getCanvasPoint(list[list.length - 1]);
+
+    if (activeStroke.kind === 'arrow') {
+      activeStroke.end = e.shiftKey ? snapStraightLine(activeStroke.start, latestPt, 'angle15') : latestPt;
+      renderLiveCanvas();
+      return;
+    }
+
+    if (activeStroke.kind === 'rect') {
+      activeStroke.end = e.shiftKey ? snapStraightLine(activeStroke.start, latestPt, 'square') : latestPt;
+      renderLiveCanvas();
+      return;
+    }
+
+    if (activeStroke.kind === 'line' || e.shiftKey) {
+      activeStroke.kind = 'line';
+      activeStroke.end = e.shiftKey
+        ? snapStraightLine(activeStroke.start, latestPt, 'magnetic')
+        : latestPt;
+      renderLiveCanvas();
       return;
     }
 
     var added = false;
     for (var k = 0; k < list.length; k++) {
       var samplePt = getCanvasPoint(list[k]);
-      if (appendSmoothedPoint(targetStroke.points, samplePt)) {
+      if (appendSmoothedPoint(activeStroke.points, samplePt)) {
         added = true;
       }
     }
@@ -1005,6 +1455,7 @@
       }
       if (eraseDidMutate && erasePreSnapshot) {
         pushUndoSnapshot(erasePreSnapshot);
+        scheduleSaveStrokes();
       }
       erasePreSnapshot = null;
       eraseDidMutate = false;
@@ -1027,10 +1478,14 @@
     }
 
     if (activeStroke) {
-      if (!isCancel && activeStroke.points.length > 0) {
-        pushUndoSnapshot(state.strokes.slice());
-        state.strokes = state.strokes.concat([activeStroke]);
-        renderStaticCanvas();
+      if (!isCancel) {
+        var committed = normalizeCommittedStroke(activeStroke);
+        if (committed) {
+          pushUndoSnapshot(state.strokes.slice());
+          state.strokes = state.strokes.concat([committed]);
+          renderStaticCanvas();
+          scheduleSaveStrokes();
+        }
       }
       activeStroke = null;
       activePointerId = null;
@@ -1130,6 +1585,680 @@
     });
   }
 
+  // Per-Document Persistence & .mdo.json Export/Import
+  function getRawDocumentId() {
+    var meta = document.getElementById('vscode-markdown-preview-data');
+    if (meta) {
+      var rawSettings = meta.getAttribute('data-settings');
+      if (rawSettings) {
+        try {
+          var parsed = JSON.parse(rawSettings);
+          if (parsed && typeof parsed.source === 'string' && parsed.source) {
+            return parsed.source;
+          }
+        } catch (_err) {
+          // Ignore malformed data-settings JSON
+        }
+      }
+    }
+    if (document.body) {
+      var sourceUri = document.body.getAttribute('data-source-uri');
+      if (sourceUri) {
+        return sourceUri;
+      }
+    }
+    var firstHeading = document.querySelector('h1, h2');
+    var headingText = firstHeading ? String(firstHeading.textContent || '').trim().slice(0, 60) : '';
+    return [window.location.pathname || '', document.title || '', headingText].join('|');
+  }
+
+  function computeDocKey(rawId) {
+    var hash = 0x811c9dc5;
+    var str = String(rawId || 'default');
+    for (var i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    return STORAGE_PREFIX + ('00000000' + hash.toString(16)).slice(-8);
+  }
+
+  function round1(num) {
+    return Math.round(num * 10) / 10;
+  }
+
+  function compactStrokes(strokes) {
+    var out = [];
+    for (var i = 0; i < strokes.length; i++) {
+      var s = strokes[i];
+      if (!s) continue;
+      var kind = s.kind || 'freehand';
+      if (kind === 'line' || kind === 'arrow' || kind === 'rect') {
+        if (!s.start || !s.end) continue;
+        out.push({
+          kind: kind,
+          tool: s.tool,
+          color: s.color,
+          width: round1(s.width),
+          opacity: round1(s.opacity * 100) / 100,
+          start: { x: round1(s.start.x), y: round1(s.start.y) },
+          end: { x: round1(s.end.x), y: round1(s.end.y) }
+        });
+      } else if (s.points && s.points.length > 0) {
+        var pts = [];
+        for (var j = 0; j < s.points.length; j++) {
+          pts.push({ x: round1(s.points[j].x), y: round1(s.points[j].y) });
+        }
+        out.push({
+          kind: 'freehand',
+          tool: s.tool,
+          color: s.color,
+          width: round1(s.width),
+          opacity: round1(s.opacity * 100) / 100,
+          points: pts
+        });
+      }
+    }
+    return out;
+  }
+
+  function isValidPoint(pt) {
+    return Boolean(pt && typeof pt.x === 'number' && typeof pt.y === 'number' && isFinite(pt.x) && isFinite(pt.y));
+  }
+
+  function sanitizeStrokes(list) {
+    if (!Array.isArray(list)) {
+      return [];
+    }
+    var valid = [];
+    var limit = Math.min(list.length, 5000);
+    for (var i = 0; i < limit; i++) {
+      var s = list[i];
+      if (!s || typeof s !== 'object') continue;
+      var kind = s.kind || 'freehand';
+      if (kind !== 'freehand' && kind !== 'line' && kind !== 'arrow' && kind !== 'rect') continue;
+      var tool = s.tool;
+      if (tool !== 'pen' && tool !== 'highlighter' && tool !== 'arrow' && tool !== 'rect') continue;
+      var color = s.color;
+      if (typeof color !== 'string' || (color !== 'adaptive' && !/^#[0-9a-f]{3,8}$/i.test(color))) continue;
+      if (typeof s.width !== 'number' || !isFinite(s.width) || s.width <= 0 || s.width > 64) continue;
+      var opacity = typeof s.opacity === 'number' && isFinite(s.opacity) ? Math.max(0.05, Math.min(1, s.opacity)) : 1;
+
+      if (kind === 'freehand') {
+        if (!Array.isArray(s.points) || s.points.length === 0) continue;
+        var pts = [];
+        var ptLimit = Math.min(s.points.length, 20000);
+        for (var j = 0; j < ptLimit; j++) {
+          if (isValidPoint(s.points[j])) {
+            pts.push({ x: s.points[j].x, y: s.points[j].y });
+          }
+        }
+        if (pts.length > 0) {
+          valid.push({ kind: 'freehand', tool: tool, color: color, width: s.width, opacity: opacity, points: pts });
+        }
+      } else {
+        if (!isValidPoint(s.start) || !isValidPoint(s.end)) continue;
+        valid.push({
+          kind: kind,
+          tool: tool,
+          color: color,
+          width: s.width,
+          opacity: opacity,
+          start: { x: s.start.x, y: s.start.y },
+          end: { x: s.end.x, y: s.end.y }
+        });
+      }
+    }
+    return valid;
+  }
+
+  function readStorageIndex() {
+    try {
+      var raw = window.localStorage ? window.localStorage.getItem(STORAGE_INDEX_KEY) : '';
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  function writeStorageIndex(indexList) {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(indexList));
+      }
+    } catch (_err) {
+      // Ignore storage index errors
+    }
+  }
+
+  function saveCurrentDocStrokes() {
+    if (!state.autoSave || !currentDocKey || !window.localStorage) {
+      return;
+    }
+    try {
+      var indexList = readStorageIndex().filter(function (entry) {
+        return entry && entry.key !== currentDocKey;
+      });
+      if (state.strokes.length === 0) {
+        window.localStorage.removeItem(currentDocKey);
+        writeStorageIndex(indexList);
+        return;
+      }
+      var payload = JSON.stringify({
+        version: 1,
+        savedAt: Date.now(),
+        source: currentDocRawId,
+        strokes: compactStrokes(state.strokes)
+      });
+      try {
+        window.localStorage.setItem(currentDocKey, payload);
+      } catch (_quotaErr) {
+        while (indexList.length > 0) {
+          var oldest = indexList.shift();
+          if (oldest && oldest.key) {
+            window.localStorage.removeItem(oldest.key);
+          }
+          try {
+            window.localStorage.setItem(currentDocKey, payload);
+            break;
+          } catch (_retryErr) {
+            // Continue evicting
+          }
+        }
+      }
+      indexList.push({ key: currentDocKey, savedAt: Date.now() });
+      while (indexList.length > MAX_STORED_DOCS) {
+        var evicted = indexList.shift();
+        if (evicted && evicted.key) {
+          window.localStorage.removeItem(evicted.key);
+        }
+      }
+      writeStorageIndex(indexList);
+    } catch (_err) {
+      // Ignore storage failures in sandboxed environments
+    }
+  }
+
+  function scheduleSaveStrokes() {
+    if (!state.autoSave) {
+      return;
+    }
+    if (saveTimerId) {
+      clearTimeout(saveTimerId);
+    }
+    saveTimerId = setTimeout(function () {
+      saveTimerId = 0;
+      saveCurrentDocStrokes();
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  function flushSaveStrokes() {
+    if (saveTimerId) {
+      clearTimeout(saveTimerId);
+      saveTimerId = 0;
+      saveCurrentDocStrokes();
+    }
+  }
+
+  function loadDocStrokesForKey(docKey) {
+    if (!state.autoSave || !docKey || !window.localStorage) {
+      return [];
+    }
+    try {
+      var raw = window.localStorage.getItem(docKey);
+      if (!raw) {
+        return [];
+      }
+      var parsed = JSON.parse(raw);
+      return parsed && Array.isArray(parsed.strokes) ? sanitizeStrokes(parsed.strokes) : [];
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  function checkDocumentChanged() {
+    var nextRawId = getRawDocumentId();
+    if (!nextRawId || nextRawId === currentDocRawId) {
+      return;
+    }
+    flushSaveStrokes();
+    currentDocRawId = nextRawId;
+    currentDocKey = computeDocKey(nextRawId);
+    state.undoStack = [];
+    state.redoStack = [];
+    state.strokes = state.autoSave ? loadDocStrokesForKey(currentDocKey) : [];
+    renderStaticCanvas();
+    updateUI();
+  }
+
+  function toggleAutoSave() {
+    state.autoSave = !state.autoSave;
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(STORAGE_AUTOSAVE_KEY, state.autoSave ? '1' : '0');
+      }
+    } catch (_err) {
+      // Ignore storage access errors
+    }
+    if (state.autoSave && state.strokes.length > 0) {
+      saveCurrentDocStrokes();
+    }
+    updateUI();
+    showToast(state.autoSave ? msg().toastAutoSaveOn : msg().toastAutoSaveOff);
+  }
+
+  function getDocBaseFilename() {
+    var src = String(currentDocRawId || document.title || 'markdown-draw');
+    var tail = src.split(/[\\/]/).pop() || 'markdown-draw';
+    tail = tail.split('|')[0].replace(/\.md$/i, '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+    return tail || 'markdown-draw';
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      if (a.parentNode) {
+        a.parentNode.removeChild(a);
+      }
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  function exportStrokesJson() {
+    closePopover();
+    var payload = {
+      format: 'markdown-draw-overlay',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      source: currentDocRawId,
+      strokes: compactStrokes(state.strokes)
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    triggerBlobDownload(blob, getDocBaseFilename() + '.mdo.json');
+    showToast(msg().toastJsonExported);
+  }
+
+  function importStrokesJson() {
+    closePopover();
+    if (!fileInputEl) {
+      return;
+    }
+    fileInputEl.value = '';
+    fileInputEl.click();
+  }
+
+  function handleImportFileSelected() {
+    if (!fileInputEl || !fileInputEl.files || fileInputEl.files.length === 0) {
+      return;
+    }
+    var file = fileInputEl.files[0];
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(String(reader.result || ''));
+        var imported = parsed && Array.isArray(parsed.strokes) ? sanitizeStrokes(parsed.strokes) : null;
+        if (!imported) {
+          showToast(msg().toastJsonInvalid);
+          return;
+        }
+        pushUndoSnapshot(state.strokes.slice());
+        state.strokes = imported;
+        renderStaticCanvas();
+        updateUI();
+        scheduleSaveStrokes();
+        showToast(msg().toastJsonImported.replace('{0}', String(imported.length)));
+      } catch (_err) {
+        showToast(msg().toastJsonInvalid);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Annotated PNG Screenshot Export
+  function resolveSurfaceBgColor() {
+    var candidates = [
+      document.querySelector('.crossnote[data-for="preview"]'),
+      document.body,
+      document.documentElement
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (!el || typeof window.getComputedStyle !== 'function') continue;
+      var bg = window.getComputedStyle(el).backgroundColor;
+      var parsed = parseCssRgb(bg);
+      if (parsed && parsed.a > 0.1) {
+        return bg;
+      }
+    }
+    return isLightSurface() ? '#ffffff' : '#1e1e1e';
+  }
+
+  function collectAccessibleCssText() {
+    var parts = [];
+    try {
+      var sheets = document.styleSheets;
+      for (var i = 0; i < sheets.length; i++) {
+        var sheet = sheets[i];
+        try {
+          var rules = sheet.cssRules;
+          if (!rules) continue;
+          for (var j = 0; j < rules.length; j++) {
+            var cssText = rules[j].cssText;
+            if (cssText && cssText.indexOf('#mdo-') === -1) {
+              parts.push(cssText);
+            }
+          }
+        } catch (_secErr) {
+          // Skip cross-origin restricted stylesheets
+        }
+      }
+    } catch (_err) {
+      // Ignore stylesheet iteration errors
+    }
+
+    var varDecls = [];
+    if (typeof window.getComputedStyle === 'function') {
+      var targets = [document.documentElement, document.body];
+      for (var t = 0; t < targets.length; t++) {
+        var target = targets[t];
+        if (!target) continue;
+        var cs = window.getComputedStyle(target);
+        var decls = [];
+        for (var k = 0; k < cs.length; k++) {
+          var prop = cs[k];
+          if (prop && prop.indexOf('--') === 0) {
+            decls.push(prop + ':' + cs.getPropertyValue(prop) + ';');
+          }
+        }
+        if (decls.length > 0) {
+          varDecls.push((t === 0 ? ':root{' : 'body{') + decls.join('') + '}');
+        }
+      }
+    }
+    return varDecls.join('\n') + '\n' + parts.join('\n');
+  }
+
+  function inlineImagesForClone(cloneRoot) {
+    var imgs = cloneRoot.querySelectorAll('img');
+    var tasks = [];
+    for (var i = 0; i < imgs.length; i++) {
+      (function (imgEl) {
+        var src = imgEl.getAttribute('src');
+        if (!src || src.indexOf('data:') === 0) {
+          return;
+        }
+        var p = new Promise(function (resolve) {
+          var timer = setTimeout(function () {
+            imgEl.removeAttribute('src');
+            imgEl.style.visibility = 'hidden';
+            resolve();
+          }, 1200);
+          fetch(src)
+            .then(function (resp) {
+              if (!resp.ok) throw new Error('HTTP ' + resp.status);
+              return resp.blob();
+            })
+            .then(function (blob) {
+              var reader = new FileReader();
+              reader.onloadend = function () {
+                clearTimeout(timer);
+                if (typeof reader.result === 'string') {
+                  imgEl.setAttribute('src', reader.result);
+                } else {
+                  imgEl.removeAttribute('src');
+                  imgEl.style.visibility = 'hidden';
+                }
+                resolve();
+              };
+              reader.readAsDataURL(blob);
+            })
+            .catch(function () {
+              clearTimeout(timer);
+              imgEl.removeAttribute('src');
+              imgEl.style.visibility = 'hidden';
+              resolve();
+            });
+        });
+        tasks.push(p);
+      })(imgs[i]);
+    }
+    return Promise.all(tasks);
+  }
+
+  function canvasToPngBlob(canvas) {
+    return new Promise(function (resolve, reject) {
+      try {
+        canvas.toBlob(function (blob) {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Empty PNG blob'));
+          }
+        }, 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function drawAnnotationsOnExportContext(ctx, scrollX, scrollY) {
+    ctx.save();
+    ctx.translate(-scrollX, -scrollY);
+    for (var i = 0; i < state.strokes.length; i++) {
+      drawCommittedStroke(ctx, state.strokes[i]);
+    }
+    var now = performance.now();
+    for (var j = 0; j < state.laserStrokes.length; j++) {
+      var lStroke = state.laserStrokes[j];
+      var alpha = 1;
+      if (lStroke.endedAt !== null) {
+        var elapsed = now - lStroke.endedAt;
+        var p = Math.min(1, Math.max(0, elapsed / LASER_FADE_MS));
+        alpha = (1 - p) * (1 - p);
+      }
+      drawLaserStroke(ctx, lStroke, alpha);
+    }
+    ctx.restore();
+  }
+
+  function renderFullViewportCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg) {
+    var cloneBody = document.body.cloneNode(true);
+    var stripIds = ['mdo-canvas-layer', 'mdo-toolbar', 'mdo-toast', 'mdo-popover', 'mdo-import-input'];
+    for (var i = 0; i < stripIds.length; i++) {
+      var node = cloneBody.querySelector('#' + stripIds[i]);
+      if (node && node.parentNode) {
+        node.parentNode.removeChild(node);
+      }
+    }
+    var forbidden = cloneBody.querySelectorAll('script, iframe, noscript');
+    for (var f = 0; f < forbidden.length; f++) {
+      if (forbidden[f].parentNode) {
+        forbidden[f].parentNode.removeChild(forbidden[f]);
+      }
+    }
+
+    return inlineImagesForClone(cloneBody).then(function () {
+      var docW = Math.max(document.documentElement.scrollWidth || 0, vpW);
+      var svgEl = document.createElementNS(SVG_NS, 'svg');
+      svgEl.setAttribute('xmlns', SVG_NS);
+      svgEl.setAttribute('width', String(vpW));
+      svgEl.setAttribute('height', String(vpH));
+      svgEl.setAttribute('viewBox', '0 0 ' + vpW + ' ' + vpH);
+
+      var fo = document.createElementNS(SVG_NS, 'foreignObject');
+      fo.setAttribute('width', '100%');
+      fo.setAttribute('height', '100%');
+
+      var htmlWrap = document.createElementNS(XHTML_NS, 'html');
+      htmlWrap.setAttribute('xmlns', XHTML_NS);
+      if (document.documentElement && document.documentElement.className) {
+        htmlWrap.className = document.documentElement.className;
+      }
+      htmlWrap.style.width = vpW + 'px';
+      htmlWrap.style.height = vpH + 'px';
+      htmlWrap.style.overflow = 'hidden';
+
+      var headEl = document.createElementNS(XHTML_NS, 'head');
+      var styleEl = document.createElementNS(XHTML_NS, 'style');
+      styleEl.textContent = collectAccessibleCssText();
+      headEl.appendChild(styleEl);
+
+      cloneBody.style.width = docW + 'px';
+      cloneBody.style.transformOrigin = 'top left';
+      cloneBody.style.transform = 'translate(' + -scrollX + 'px, ' + -scrollY + 'px)';
+      cloneBody.style.overflow = 'visible';
+
+      htmlWrap.appendChild(headEl);
+      htmlWrap.appendChild(cloneBody);
+      fo.appendChild(htmlWrap);
+      svgEl.appendChild(fo);
+
+      var svgXml = new XMLSerializer().serializeToString(svgEl);
+      var svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgXml);
+
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        var done = false;
+        var timeoutId = setTimeout(function () {
+          if (!done) {
+            done = true;
+            reject(new Error('SVG render timeout'));
+          }
+        }, 2000);
+        img.onload = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          try {
+            var outCanvas = document.createElement('canvas');
+            outCanvas.width = Math.max(1, Math.round(vpW * exportDpr));
+            outCanvas.height = Math.max(1, Math.round(vpH * exportDpr));
+            var outCtx = outCanvas.getContext('2d');
+            outCtx.setTransform(exportDpr, 0, 0, exportDpr, 0, 0);
+            outCtx.fillStyle = surfaceBg;
+            outCtx.fillRect(0, 0, vpW, vpH);
+            outCtx.drawImage(img, 0, 0, vpW, vpH);
+            drawAnnotationsOnExportContext(outCtx, scrollX, scrollY);
+            canvasToPngBlob(outCanvas).then(resolve, reject);
+          } catch (drawErr) {
+            reject(drawErr);
+          }
+        };
+        img.onerror = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          reject(new Error('SVG image load blocked'));
+        };
+        img.src = svgUrl;
+      });
+    });
+  }
+
+  function renderFallbackOverlayCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg) {
+    var outCanvas = document.createElement('canvas');
+    outCanvas.width = Math.max(1, Math.round(vpW * exportDpr));
+    outCanvas.height = Math.max(1, Math.round(vpH * exportDpr));
+    var outCtx = outCanvas.getContext('2d');
+    outCtx.setTransform(exportDpr, 0, 0, exportDpr, 0, 0);
+    outCtx.fillStyle = surfaceBg;
+    outCtx.fillRect(0, 0, vpW, vpH);
+    drawAnnotationsOnExportContext(outCtx, scrollX, scrollY);
+    return canvasToPngBlob(outCanvas);
+  }
+
+  function formatTimestamp() {
+    var d = new Date();
+    function pad2(n) {
+      return (n < 10 ? '0' : '') + n;
+    }
+    return (
+      d.getFullYear() +
+      pad2(d.getMonth() + 1) +
+      pad2(d.getDate()) +
+      '-' +
+      pad2(d.getHours()) +
+      pad2(d.getMinutes()) +
+      pad2(d.getSeconds())
+    );
+  }
+
+  function tryCopyPngToClipboard(blob) {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.clipboard ||
+      typeof navigator.clipboard.write !== 'function' ||
+      typeof ClipboardItem === 'undefined'
+    ) {
+      return Promise.resolve(false);
+    }
+    try {
+      var writePromise = navigator.clipboard
+        .write([new ClipboardItem({ 'image/png': blob })])
+        .then(function () {
+          return true;
+        })
+        .catch(function () {
+          return false;
+        });
+      var timeoutPromise = new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve(false);
+        }, 600);
+      });
+      return Promise.race([writePromise, timeoutPromise]);
+    } catch (_err) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function exportScreenshotPng() {
+    if (state.isExporting) {
+      return Promise.resolve();
+    }
+    closePopover();
+    state.isExporting = true;
+    updateUI();
+
+    var vpW = Math.max(1, document.documentElement.clientWidth || window.innerWidth || 800);
+    var vpH = Math.max(1, document.documentElement.clientHeight || window.innerHeight || 600);
+    var scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0;
+    var scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    var exportDpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    var surfaceBg = resolveSurfaceBgColor();
+    var usedFallback = false;
+
+    return renderFullViewportCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg)
+      .catch(function () {
+        usedFallback = true;
+        return renderFallbackOverlayCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg);
+      })
+      .then(function (blob) {
+        triggerBlobDownload(blob, getDocBaseFilename() + '-' + formatTimestamp() + '.png');
+        var t = msg();
+        showToast(usedFallback ? t.toastExportedFallbackFileOnly : t.toastExportedFileOnly);
+        return tryCopyPngToClipboard(blob).then(function (copied) {
+          if (copied) {
+            var tNow = msg();
+            showToast(usedFallback ? tNow.toastExportedFallbackBoth : tNow.toastExportedBoth);
+          }
+        });
+      })
+      .catch(function () {
+        showToast(msg().toastExportFailed);
+      })
+      .finally(function () {
+        state.isExporting = false;
+        updateUI();
+      });
+  }
+
   function toggleLanguage() {
     state.lang = state.lang === 'en' ? 'zh-TW' : 'en';
     try {
@@ -1186,10 +2315,27 @@
       clearBtn.title = t.clearTitle;
       clearBtn.setAttribute('aria-label', t.clearAria);
     }
+    if (exportBtn) {
+      exportBtn.title = t.exportTitle;
+      exportBtn.setAttribute('aria-label', t.exportAria);
+    }
+    if (moreBtn) {
+      moreBtn.title = t.moreTitle;
+      moreBtn.setAttribute('aria-label', t.moreAria);
+    }
     if (langBtn) {
       langBtn.textContent = t.langBadge;
       langBtn.title = t.langSwitchTitle;
       langBtn.setAttribute('aria-label', t.langSwitchTitle);
+    }
+    if (autoSaveLabelEl) {
+      autoSaveLabelEl.textContent = t.autoSaveLabel;
+    }
+    if (exportJsonItem) {
+      exportJsonItem.textContent = t.exportJsonLabel;
+    }
+    if (importJsonItem) {
+      importJsonItem.textContent = t.importJsonLabel;
     }
   }
 
@@ -1260,6 +2406,23 @@
     }
     if (clearBtn) {
       clearBtn.disabled = state.strokes.length === 0;
+    }
+    if (exportBtn) {
+      exportBtn.disabled = state.isExporting;
+    }
+    if (moreBtn) {
+      moreBtn.classList.toggle('mdo-active', state.popoverOpen);
+      moreBtn.setAttribute('aria-expanded', String(state.popoverOpen));
+    }
+    if (popoverEl) {
+      popoverEl.classList.toggle('mdo-popover-open', state.popoverOpen && !state.collapsed);
+    }
+    if (autoSaveBadge) {
+      autoSaveBadge.textContent = state.autoSave ? t.onLabel : t.offLabel;
+      autoSaveBadge.classList.toggle('mdo-on', state.autoSave);
+    }
+    if (autoSaveItem) {
+      autoSaveItem.setAttribute('aria-checked', String(state.autoSave));
     }
   }
 
@@ -1408,15 +2571,30 @@
     clearBtn.appendChild(getActionIcon('clear'));
     clearBtn.addEventListener('click', clearAll);
 
+    exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'mdo-icon-btn';
+    exportBtn.appendChild(getActionIcon('export'));
+    exportBtn.addEventListener('click', exportScreenshotPng);
+
     langBtn = document.createElement('button');
     langBtn.type = 'button';
     langBtn.className = 'mdo-icon-btn mdo-lang-btn';
     langBtn.addEventListener('click', toggleLanguage);
 
+    moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'mdo-icon-btn mdo-more-btn';
+    moreBtn.setAttribute('aria-haspopup', 'menu');
+    moreBtn.appendChild(getActionIcon('more'));
+    moreBtn.addEventListener('click', togglePopover);
+
     actionGroup.appendChild(undoBtn);
     actionGroup.appendChild(redoBtn);
     actionGroup.appendChild(clearBtn);
+    actionGroup.appendChild(exportBtn);
     actionGroup.appendChild(langBtn);
+    actionGroup.appendChild(moreBtn);
     bodyWrap.appendChild(actionGroup);
 
     bodyWrap.appendChild(createDivider());
@@ -1435,6 +2613,50 @@
     toastEl.id = 'mdo-toast';
     toastEl.setAttribute('role', 'status');
     toastEl.setAttribute('aria-live', 'polite');
+
+    // 4. More Popover Menu & Hidden File Input
+    popoverEl = document.createElement('div');
+    popoverEl.id = 'mdo-popover';
+    popoverEl.setAttribute('role', 'menu');
+
+    autoSaveItem = document.createElement('button');
+    autoSaveItem.type = 'button';
+    autoSaveItem.className = 'mdo-popover-item';
+    autoSaveItem.setAttribute('role', 'menuitemcheckbox');
+    autoSaveLabelEl = document.createElement('span');
+    autoSaveBadge = document.createElement('span');
+    autoSaveBadge.className = 'mdo-popover-check';
+    autoSaveItem.appendChild(autoSaveLabelEl);
+    autoSaveItem.appendChild(autoSaveBadge);
+    autoSaveItem.addEventListener('click', toggleAutoSave);
+
+    var popSep = document.createElement('div');
+    popSep.className = 'mdo-popover-sep';
+    popSep.setAttribute('aria-hidden', 'true');
+
+    exportJsonItem = document.createElement('button');
+    exportJsonItem.type = 'button';
+    exportJsonItem.className = 'mdo-popover-item';
+    exportJsonItem.setAttribute('role', 'menuitem');
+    exportJsonItem.addEventListener('click', exportStrokesJson);
+
+    importJsonItem = document.createElement('button');
+    importJsonItem.type = 'button';
+    importJsonItem.className = 'mdo-popover-item';
+    importJsonItem.setAttribute('role', 'menuitem');
+    importJsonItem.addEventListener('click', importStrokesJson);
+
+    popoverEl.appendChild(autoSaveItem);
+    popoverEl.appendChild(popSep);
+    popoverEl.appendChild(exportJsonItem);
+    popoverEl.appendChild(importJsonItem);
+
+    fileInputEl = document.createElement('input');
+    fileInputEl.id = 'mdo-import-input';
+    fileInputEl.type = 'file';
+    fileInputEl.accept = '.json,.mdo.json,application/json';
+    fileInputEl.style.display = 'none';
+    fileInputEl.addEventListener('change', handleImportFileSelected);
 
     ensureMounted();
     applyLocale();
@@ -1464,6 +2686,12 @@
       }
       if (toastEl && toastEl.parentNode !== document.body) {
         document.body.appendChild(toastEl);
+      }
+      if (popoverEl && popoverEl.parentNode !== document.body) {
+        document.body.appendChild(popoverEl);
+      }
+      if (fileInputEl && fileInputEl.parentNode !== document.body) {
+        document.body.appendChild(fileInputEl);
       }
       if (mounted) {
         syncCanvasSize();
@@ -1496,12 +2724,20 @@
       return;
     }
 
-    // Escape: Return to Browse Mode
-    if (e.key === 'Escape' && state.mode === 'draw') {
-      e.preventDefault();
-      e.stopPropagation();
-      setMode('browse', true);
-      return;
+    // Escape: Close Popover or Return to Browse Mode
+    if (e.key === 'Escape') {
+      if (state.popoverOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        closePopover();
+        return;
+      }
+      if (state.mode === 'draw') {
+        e.preventDefault();
+        e.stopPropagation();
+        setMode('browse', true);
+        return;
+      }
     }
 
     // Undo / Redo (Ctrl/Cmd + Z, Ctrl/Cmd + Y, Ctrl/Cmd + Shift + Z)
@@ -1573,7 +2809,8 @@
             if (
               (canvasLayer && !canvasLayer.isConnected) ||
               (toolbar && !toolbar.isConnected) ||
-              (toastEl && !toastEl.isConnected)
+              (toastEl && !toastEl.isConnected) ||
+              (popoverEl && !popoverEl.isConnected)
             ) {
               needsRemount = true;
             }
@@ -1600,18 +2837,43 @@
       });
     }
 
+    document.addEventListener(
+      'pointerdown',
+      function (e) {
+        if (!state.popoverOpen) {
+          return;
+        }
+        var target = e.target;
+        if (
+          (popoverEl && popoverEl.contains(target)) ||
+          (moreBtn && moreBtn.contains(target))
+        ) {
+          return;
+        }
+        closePopover();
+      },
+      true
+    );
+
     window.addEventListener('resize', scheduleSyncSize);
     window.addEventListener('load', scheduleSyncSize, true);
     window.addEventListener('vscode.markdown.updateContent', function () {
       ensureMounted();
+      checkDocumentChanged();
       scheduleSyncSize();
     });
+    window.addEventListener('pagehide', flushSaveStrokes);
     window.addEventListener('keydown', handleKeyDown, true);
   }
 
   function init() {
     if (!document.body || document.body.getAttribute('for') === 'html-export') {
       return;
+    }
+    currentDocRawId = getRawDocumentId();
+    currentDocKey = computeDocKey(currentDocRawId);
+    if (state.autoSave) {
+      state.strokes = loadDocStrokesForKey(currentDocKey);
     }
     buildUI();
     setupObserversAndListeners();

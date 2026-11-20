@@ -5,6 +5,19 @@ All notable changes to **Markdown Draw Overlay** will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-21
+
+### Added
+- **Geometric Drawing Tools & `Shift` Snapping**:
+  - Added dedicated **Arrow** and **Rectangle** tools to the floating toolbar.
+  - Hold **`Shift`** while drawing with **Pen** or **Highlighter** for crisp straight lines with ±6° horizontal/vertical magnetic snapping (`Shift` with Arrow snaps to 15° angles; `Shift` with Rectangle locks 1:1 squares).
+  - Vector Eraser supports whole-shape click and drag hit-testing for lines, arrows, and rectangles.
+- **Per-Document Persistence & `.mdo.json` Export/Import**:
+  - Automatically remembers strokes per document URI in preview storage across edits and preview switches (toggleable in the `⋯` menu).
+  - Export and import portable `.mdo.json` annotation files via the `⋯` menu without modifying your Markdown source.
+- **One-Click Annotated PNG Screenshot Export**:
+  - Camera button on the toolbar composites the current viewport Markdown view and vector annotations into a timestamped PNG download, attempts to copy the PNG directly to the clipboard, and gracefully falls back to an annotation-layer PNG when strict Webview CSP blocks DOM capture.
+
 ## [0.1.1] - 2026-11-21
 
 ### Added

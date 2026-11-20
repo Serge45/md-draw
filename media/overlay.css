@@ -91,14 +91,14 @@ body.vscode-high-contrast-light #mdo-toolbar {
 .mdo-toolbar-body {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 
 .mdo-group {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 
 .mdo-divider {
@@ -398,16 +398,103 @@ body.vscode-high-contrast-light #mdo-toast {
   transform: translateY(0);
 }
 
+/* More Popover Menu */
+#mdo-popover {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 99999;
+  min-width: 218px;
+  padding: 6px;
+  border-radius: 10px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 12px;
+  color: var(--vscode-foreground, #cccccc);
+  background: rgba(30, 30, 30, 0.88);
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-color: color-mix(in srgb, var(--vscode-foreground, #cccccc) 16%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.14);
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#mdo-popover.mdo-popover-open {
+  display: flex;
+}
+
+body.vscode-light #mdo-popover,
+body.vscode-high-contrast-light #mdo-popover {
+  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--vscode-editor-background, #ffffff) 92%, transparent);
+  border-color: rgba(0, 0, 0, 0.12);
+  border-color: color-mix(in srgb, var(--vscode-foreground, #333333) 14%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.mdo-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.mdo-popover-item:hover {
+  background: rgba(128, 128, 128, 0.18);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 12%, transparent);
+}
+
+.mdo-popover-check {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.18);
+  color: inherit;
+}
+
+.mdo-popover-check.mdo-on {
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.mdo-popover-sep {
+  height: 1px;
+  margin: 3px 4px;
+  background: rgba(128, 128, 128, 0.22);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 16%, transparent);
+}
+
 /* Shift toolbar left when Markdown Preview Enhanced Sidebar TOC is open */
 body.preview-container.show-sidebar-toc #mdo-toolbar,
-body.preview-container.show-sidebar-toc #mdo-toast {
+body.preview-container.show-sidebar-toc #mdo-toast,
+body.preview-container.show-sidebar-toc #mdo-popover {
   right: calc(var(--sidebar-toc-width, 280px) + 16px);
 }
 
 /* Hide interactive overlay controls during print / PDF export */
 @media print {
   #mdo-toolbar,
-  #mdo-toast {
+  #mdo-toast,
+  #mdo-popover {
     display: none !important;
   }
 }
