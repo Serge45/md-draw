@@ -1,0 +1,19 @@
+{
+  "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to start annotating.": "請先開啟一個 Markdown (.md) 檔案，並透過預覽快捷鍵 (Ctrl+Shift+V 或 Ctrl+K V) 開啟原生 Markdown Preview 即可開始標註。",
+  "Preview Current File Anyway": "強制預覽目前檔案",
+  "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to use Markdown Draw Overlay.": "請先開啟任一 Markdown (.md) 檔案，再開啟原生 Markdown Preview (Ctrl+Shift+V 或 Ctrl+K V) 使用 Markdown Draw Overlay。",
+  "Markdown Draw Overlay has been written to the MPE config directory ({0}). MPE disables preview scripts by default — enable markdown-preview-enhanced.enablePreviewScripts to load the toolbar.": "已將 Markdown Draw Overlay 寫入 MPE 設定目錄 ({0})。MPE 預設停用預覽腳本，請啟用 markdown-preview-enhanced.enablePreviewScripts 才能載入工具列。",
+  "Enable enablePreviewScripts Now": "立即啟用 enablePreviewScripts",
+  "Open head.html": "開啟 head.html",
+  "Later": "稍後再說",
+  "Enabled enablePreviewScripts. Please reopen or refresh your MPE preview tab to start drawing.": "已啟用 enablePreviewScripts，請重新開啟或重新整理 MPE 預覽分頁即可使用。",
+  "Enabled enablePreviewScripts. Note: this workspace is currently untrusted, so MPE will ignore preview scripts until you trust the workspace.": "已啟用 enablePreviewScripts；注意目前工作區尚未設為信任 (Trusted Workspace)，MPE 會略過腳本直到信任此工作區。",
+  "Could not automatically update markdown-preview-enhanced.enablePreviewScripts (please verify Markdown Preview Enhanced is installed).": "無法自動更新 markdown-preview-enhanced.enablePreviewScripts（請確認已安裝 Markdown Preview Enhanced）。",
+  "Open Settings": "開啟設定",
+  "Synced Markdown Draw Overlay to MPE ({0}). Reopen or refresh your MPE preview tab to start drawing.": "已同步 Markdown Draw Overlay 至 MPE ({0})！重新開啟或重新整理 MPE 預覽分頁即可使用。",
+  "Synced Markdown Draw Overlay to MPE ({0}). This workspace is currently untrusted, so MPE will ignore head.html scripts until you trust the workspace.": "已同步 Markdown Draw Overlay 至 MPE ({0})。目前工作區尚未信任，MPE 會略過 head.html 腳本直到信任工作區。",
+  "Failed to install MPE integration: {0}": "MPE 整合寫入失敗：{0}",
+  "Removed Markdown Draw Overlay integration from MPE config directory ({0}).": "已從 MPE 設定目錄 ({0}) 移除 Markdown Draw Overlay 整合。",
+  "No Markdown Draw Overlay integration was found in MPE config directory ({0}).": "在 MPE 設定目錄 ({0}) 未發現已安裝的 Markdown Draw Overlay 整合區塊。",
+  "Failed to remove MPE integration: {0}": "MPE 整合移除失敗：{0}"
+}

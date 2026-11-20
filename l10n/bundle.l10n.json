@@ -1,0 +1,19 @@
+{
+  "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to start annotating.": "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to start annotating.",
+  "Preview Current File Anyway": "Preview Current File Anyway",
+  "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to use Markdown Draw Overlay.": "Please open a Markdown (.md) file first, then open the native Markdown Preview (Ctrl+Shift+V or Ctrl+K V) to use Markdown Draw Overlay.",
+  "Markdown Draw Overlay has been written to the MPE config directory ({0}). MPE disables preview scripts by default — enable markdown-preview-enhanced.enablePreviewScripts to load the toolbar.": "Markdown Draw Overlay has been written to the MPE config directory ({0}). MPE disables preview scripts by default — enable markdown-preview-enhanced.enablePreviewScripts to load the toolbar.",
+  "Enable enablePreviewScripts Now": "Enable enablePreviewScripts Now",
+  "Open head.html": "Open head.html",
+  "Later": "Later",
+  "Enabled enablePreviewScripts. Please reopen or refresh your MPE preview tab to start drawing.": "Enabled enablePreviewScripts. Please reopen or refresh your MPE preview tab to start drawing.",
+  "Enabled enablePreviewScripts. Note: this workspace is currently untrusted, so MPE will ignore preview scripts until you trust the workspace.": "Enabled enablePreviewScripts. Note: this workspace is currently untrusted, so MPE will ignore preview scripts until you trust the workspace.",
+  "Could not automatically update markdown-preview-enhanced.enablePreviewScripts (please verify Markdown Preview Enhanced is installed).": "Could not automatically update markdown-preview-enhanced.enablePreviewScripts (please verify Markdown Preview Enhanced is installed).",
+  "Open Settings": "Open Settings",
+  "Synced Markdown Draw Overlay to MPE ({0}). Reopen or refresh your MPE preview tab to start drawing.": "Synced Markdown Draw Overlay to MPE ({0}). Reopen or refresh your MPE preview tab to start drawing.",
+  "Synced Markdown Draw Overlay to MPE ({0}). This workspace is currently untrusted, so MPE will ignore head.html scripts until you trust the workspace.": "Synced Markdown Draw Overlay to MPE ({0}). This workspace is currently untrusted, so MPE will ignore head.html scripts until you trust the workspace.",
+  "Failed to install MPE integration: {0}": "Failed to install MPE integration: {0}",
+  "Removed Markdown Draw Overlay integration from MPE config directory ({0}).": "Removed Markdown Draw Overlay integration from MPE config directory ({0}).",
+  "No Markdown Draw Overlay integration was found in MPE config directory ({0}).": "No Markdown Draw Overlay integration was found in MPE config directory ({0}).",
+  "Failed to remove MPE integration: {0}": "Failed to remove MPE integration: {0}"
+}

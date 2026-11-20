@@ -1,0 +1,6 @@
+{
+  "description": "直接在 VS Code Markdown Preview 畫面上進行手繪標註、螢光筆劃重點與雷射筆解說。",
+  "command.openPreview.title": "Markdown Draw Overlay：開啟 Markdown 預覽",
+  "command.installMpeIntegration.title": "Markdown Draw Overlay：啟用 MPE 預覽整合 (head.html)",
+  "command.removeMpeIntegration.title": "Markdown Draw Overlay：移除 MPE 預覽整合"
+}

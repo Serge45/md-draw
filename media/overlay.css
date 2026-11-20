@@ -1,0 +1,413 @@
+/* Markdown Draw Overlay — Native Markdown Preview Styles */
+
+#mdo-canvas-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 99990;
+  pointer-events: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+#mdo-static-canvas,
+#mdo-live-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  touch-action: auto;
+}
+
+#mdo-canvas-layer.mdo-draw-mode #mdo-live-canvas {
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-eraser #mdo-live-canvas {
+  cursor: none;
+}
+
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-eraser.mdo-pointer-outside #mdo-live-canvas {
+  cursor: crosshair;
+}
+
+/* Floating Frosted-Glass Toolbar */
+#mdo-toolbar {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 99999;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  box-sizing: border-box;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 12px;
+  line-height: 1;
+  background: rgba(30, 30, 30, 0.78);
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 76%, transparent);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-color: color-mix(in srgb, var(--vscode-foreground, #cccccc) 16%, transparent);
+  color: var(--vscode-foreground, #cccccc);
+  border-radius: 12px;
+  padding: 5px 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24), 0 1px 4px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+  transition: border-radius 0.18s ease, padding 0.18s ease, box-shadow 0.18s ease;
+}
+
+body.vscode-light #mdo-toolbar,
+body.vscode-high-contrast-light #mdo-toolbar {
+  background: rgba(255, 255, 255, 0.80);
+  background: color-mix(in srgb, var(--vscode-editor-background, #ffffff) 80%, transparent);
+  border-color: rgba(0, 0, 0, 0.12);
+  border-color: color-mix(in srgb, var(--vscode-foreground, #333333) 14%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+#mdo-toolbar.mdo-collapsed {
+  padding: 4px;
+  border-radius: 999px;
+  gap: 0;
+}
+
+#mdo-toolbar.mdo-collapsed .mdo-toolbar-body {
+  display: none;
+}
+
+.mdo-toolbar-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mdo-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mdo-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(128, 128, 128, 0.25);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 18%, transparent);
+  margin: 0 1px;
+  flex-shrink: 0;
+}
+
+/* Mode Toggle Pill */
+.mdo-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.14);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 10%, transparent);
+  color: var(--vscode-foreground, #cccccc);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.mdo-mode-btn:hover {
+  background: rgba(128, 128, 128, 0.22);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 16%, transparent);
+}
+
+.mdo-mode-btn.mdo-active {
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+  border-color: color-mix(in srgb, var(--vscode-button-foreground, #ffffff) 20%, transparent);
+}
+
+.mdo-mode-btn.mdo-active:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background, #006bb3));
+}
+
+.mdo-mode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.45;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mdo-mode-btn.mdo-active .mdo-mode-dot {
+  background: #4ade80;
+  opacity: 1;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.85);
+}
+
+.mdo-kbd {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.18);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+
+/* Icon Buttons (Tools, Undo/Redo, Clear, Collapse) */
+.mdo-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.14s ease, color 0.14s ease, transform 0.1s ease, opacity 0.14s ease;
+}
+
+.mdo-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  pointer-events: none;
+}
+
+.mdo-icon-btn:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.18);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 12%, transparent);
+}
+
+.mdo-icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.mdo-icon-btn.mdo-active {
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.mdo-icon-btn.mdo-active:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background, #006bb3));
+}
+
+.mdo-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.mdo-clear-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+.mdo-lang-btn {
+  min-width: 28px;
+  width: auto;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mdo-collapse-btn {
+  width: 28px;
+  height: 28px;
+}
+
+#mdo-toolbar.mdo-collapsed .mdo-collapse-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.mdo-collapse-dot {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.9);
+  pointer-events: none;
+}
+
+#mdo-toolbar.mdo-collapsed.mdo-draw-active .mdo-collapse-dot {
+  display: block;
+}
+
+/* Color Swatches */
+.mdo-color-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0 2px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(128, 128, 128, 0.35);
+  border-color: color-mix(in srgb, var(--vscode-foreground, #cccccc) 28%, transparent);
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.mdo-color-btn:hover {
+  transform: scale(1.12);
+}
+
+.mdo-color-btn.mdo-active {
+  box-shadow:
+    0 0 0 2px var(--vscode-editor-background, #1e1e1e),
+    0 0 0 3.5px var(--vscode-focusBorder, #007acc);
+  transform: scale(1.1);
+}
+
+.mdo-color-red {
+  background: #ef4444;
+}
+
+.mdo-color-blue {
+  background: #3b82f6;
+}
+
+.mdo-color-green {
+  background: #22c55e;
+}
+
+.mdo-color-yellow {
+  background: #facc15;
+}
+
+.mdo-color-adaptive {
+  background: linear-gradient(135deg, #1e293b 50%, #f8fafc 50%);
+}
+
+/* Brush Size Buttons */
+.mdo-size-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.mdo-size-btn:hover {
+  background: rgba(128, 128, 128, 0.18);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 12%, transparent);
+}
+
+.mdo-size-btn.mdo-active {
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.mdo-size-dot {
+  border-radius: 50%;
+  background: currentColor;
+  display: block;
+  pointer-events: none;
+}
+
+.mdo-size-dot-s {
+  width: 4px;
+  height: 4px;
+}
+
+.mdo-size-dot-m {
+  width: 7px;
+  height: 7px;
+}
+
+.mdo-size-dot-l {
+  width: 11px;
+  height: 11px;
+}
+
+/* Focus outline for keyboard accessibility */
+#mdo-toolbar button:focus-visible {
+  outline: 1.5px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 1px;
+}
+
+/* Mode Status Toast */
+#mdo-toast {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  z-index: 99999;
+  pointer-events: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  background: rgba(30, 30, 30, 0.84);
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 86%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground, #cccccc) 16%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+body.vscode-light #mdo-toast,
+body.vscode-high-contrast-light #mdo-toast {
+  background: rgba(255, 255, 255, 0.88);
+  background: color-mix(in srgb, var(--vscode-editor-background, #ffffff) 88%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+}
+
+#mdo-toast.mdo-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Shift toolbar left when Markdown Preview Enhanced Sidebar TOC is open */
+body.preview-container.show-sidebar-toc #mdo-toolbar,
+body.preview-container.show-sidebar-toc #mdo-toast {
+  right: calc(var(--sidebar-toc-width, 280px) + 16px);
+}
+
+/* Hide interactive overlay controls during print / PDF export */
+@media print {
+  #mdo-toolbar,
+  #mdo-toast {
+    display: none !important;
+  }
+}

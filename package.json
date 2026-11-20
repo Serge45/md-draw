@@ -1,0 +1,69 @@
+{
+  "name": "markdown-draw-overlay",
+  "displayName": "Markdown Draw Overlay",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "md-draw",
+  "l10n": "./l10n",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "preview",
+    "draw",
+    "annotation",
+    "laser",
+    "highlighter",
+    "overlay"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "markdown.previewScripts": [
+      "./media/overlay.js"
+    ],
+    "markdown.previewStyles": [
+      "./media/overlay.css"
+    ],
+    "commands": [
+      {
+        "command": "markdownDrawOverlay.openPreview",
+        "title": "%command.openPreview.title%",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "markdownDrawOverlay.installMpeIntegration",
+        "title": "%command.installMpeIntegration.title%"
+      },
+      {
+        "command": "markdownDrawOverlay.removeMpeIntegration",
+        "title": "%command.removeMpeIntegration.title%"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markdownDrawOverlay.openPreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation@100"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check:overlay": "node --check media/overlay.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5"
+  }
+}

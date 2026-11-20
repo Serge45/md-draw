@@ -1,0 +1,6 @@
+{
+  "description": "Draw, highlight, and annotate with a laser pointer directly on VS Code's Markdown Preview.",
+  "command.openPreview.title": "Markdown Draw Overlay: Open Markdown Preview",
+  "command.installMpeIntegration.title": "Markdown Draw Overlay: Enable MPE Preview Integration (head.html)",
+  "command.removeMpeIntegration.title": "Markdown Draw Overlay: Remove MPE Preview Integration"
+}
