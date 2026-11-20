@@ -4,6 +4,14 @@
 
 在 VS Code 原生的 **Markdown Preview**（並支援選配整合 **Markdown Preview Enhanced**）畫面上直接手繪標註、螢光筆劃重點、與使用 1.5 秒自動漸隱雷射筆解說，完全不影響原本閱讀、選取複製文字與點擊超連結的體驗。
 
+![Markdown Draw Overlay 深色模式示意](media/demo-dark.png)
+
+### 淺色主題自適應（Light Mode）
+
+浮動工具列與自適應墨水色票會自動偵測 Dark / Light 主題與預覽底色亮度切換對比：
+
+![Markdown Draw Overlay 淺色模式示意](media/demo-light.png)
+
 ## 核心特色
 
 - **零依賴原生注入**：透過 VS Code 官方 `contributes.markdown.previewScripts` 與 `contributes.markdown.previewStyles` 注入原生預覽，不建立自訂 Webview，並於 `.md` 編輯器右上角提供一鍵開啟畫筆預覽按鈕。

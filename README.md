@@ -4,6 +4,14 @@
 
 Draw, highlight, and present with an auto-fading laser pointer directly on VS Code's native **Markdown Preview** (with optional **Markdown Preview Enhanced** integration) — without blocking text selection, link clicking, or scrolling.
 
+![Markdown Draw Overlay in Dark Mode](media/demo-dark.png)
+
+### Theme Adaptation (Light Mode)
+
+Automatically adapts toolbar styling and adaptive ink contrast between Dark Mode and Light Mode (including light paper themes in Markdown Preview Enhanced):
+
+![Markdown Draw Overlay in Light Mode](media/demo-light.png)
+
 ## Key Features
 
 - **Zero-Dependency Native Preview Injection**: Uses VS Code's official `contributes.markdown.previewScripts` and `contributes.markdown.previewStyles` instead of a custom Webview, and adds an editor title bar button on `.md` files to open the native preview in one click.
