@@ -1984,49 +1984,145 @@
     return varDecls.join('\n') + '\n' + parts.join('\n');
   }
 
-  function inlineImagesForClone(cloneRoot) {
-    var imgs = cloneRoot.querySelectorAll('img');
-    var tasks = [];
-    for (var i = 0; i < imgs.length; i++) {
-      (function (imgEl) {
-        var src = imgEl.getAttribute('src');
-        if (!src || src.indexOf('data:') === 0) {
-          return;
+  function tryImageElementToDataUrl(imgEl) {
+    if (!imgEl || !imgEl.complete || !imgEl.naturalWidth || !imgEl.naturalHeight) {
+      return null;
+    }
+    try {
+      var w = imgEl.naturalWidth;
+      var h = imgEl.naturalHeight;
+      var maxDim = 2048;
+      var scale = Math.max(w, h) > maxDim ? maxDim / Math.max(w, h) : 1;
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function loadCorsImageToDataUrl(url, timeoutMs) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) {
+          done = true;
+          resolve(null);
         }
-        var p = new Promise(function (resolve) {
-          var timer = setTimeout(function () {
-            imgEl.removeAttribute('src');
-            imgEl.style.visibility = 'hidden';
-            resolve();
-          }, 1200);
-          fetch(src)
-            .then(function (resp) {
-              if (!resp.ok) throw new Error('HTTP ' + resp.status);
-              return resp.blob();
-            })
-            .then(function (blob) {
-              var reader = new FileReader();
-              reader.onloadend = function () {
-                clearTimeout(timer);
-                if (typeof reader.result === 'string') {
-                  imgEl.setAttribute('src', reader.result);
-                } else {
-                  imgEl.removeAttribute('src');
-                  imgEl.style.visibility = 'hidden';
-                }
-                resolve();
-              };
-              reader.readAsDataURL(blob);
-            })
-            .catch(function () {
-              clearTimeout(timer);
-              imgEl.removeAttribute('src');
-              imgEl.style.visibility = 'hidden';
-              resolve();
-            });
+      }, timeoutMs || 1200);
+      img.onload = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(tryImageElementToDataUrl(img));
+      };
+      img.onerror = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(null);
+      };
+      img.crossOrigin = 'anonymous';
+      img.src = url;
+    });
+  }
+
+  function fetchImageToDataUrl(url, timeoutMs) {
+    if (typeof fetch !== 'function') {
+      return Promise.resolve(null);
+    }
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) {
+          done = true;
+          resolve(null);
+        }
+      }, timeoutMs || 1200);
+      fetch(url)
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          return resp.blob();
+        })
+        .then(function (blob) {
+          var reader = new FileReader();
+          reader.onloadend = function () {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(typeof reader.result === 'string' ? reader.result : null);
+          };
+          reader.readAsDataURL(blob);
+        })
+        .catch(function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(null);
         });
-        tasks.push(p);
-      })(imgs[i]);
+    });
+  }
+
+  function inlineSingleImagePair(pair) {
+    var liveImg = pair.liveImg;
+    var cloneImg = pair.cloneImg;
+    var src = (liveImg && (liveImg.currentSrc || liveImg.src)) || cloneImg.getAttribute('src') || '';
+    if (!src) {
+      return Promise.resolve();
+    }
+    if (src.indexOf('data:') === 0) {
+      cloneImg.setAttribute('src', src);
+      return Promise.resolve();
+    }
+
+    // Tier 1: Direct canvas read from already-loaded live <img> (no network / no CSP needed)
+    var direct = tryImageElementToDataUrl(liveImg);
+    if (direct) {
+      cloneImg.setAttribute('src', direct);
+      return Promise.resolve();
+    }
+
+    // Tier 2: Re-load via img-src with crossOrigin="anonymous" (bypasses connect-src 'none')
+    return loadCorsImageToDataUrl(src, 1200)
+      .then(function (dataUrl) {
+        if (dataUrl) {
+          return dataUrl;
+        }
+        if (/^https?:/i.test(src)) {
+          var busted = src + (src.indexOf('?') === -1 ? '?' : '&') + '_mdo_cors=1';
+          return loadCorsImageToDataUrl(busted, 1200);
+        }
+        return null;
+      })
+      .then(function (dataUrl) {
+        if (dataUrl) {
+          return dataUrl;
+        }
+        // Tier 3: Fetch fallback (works when connect-src allows it, e.g. MPE)
+        return fetchImageToDataUrl(src, 1200);
+      })
+      .then(function (dataUrl) {
+        if (dataUrl) {
+          cloneImg.setAttribute('src', dataUrl);
+        } else {
+          // Tier 4: Hide untrusted non-CORS external image so export canvas is never tainted
+          cloneImg.removeAttribute('src');
+          cloneImg.style.visibility = 'hidden';
+        }
+      });
+  }
+
+  function inlineImagePairs(imgPairs) {
+    if (!imgPairs || imgPairs.length === 0) {
+      return Promise.resolve();
+    }
+    var tasks = [];
+    for (var i = 0; i < imgPairs.length; i++) {
+      tasks.push(inlineSingleImagePair(imgPairs[i]));
     }
     return Promise.all(tasks);
   }
@@ -2175,13 +2271,17 @@
     return false;
   }
 
-  function copyComputedStylesTree(liveEl, cloneEl, isPinnedRoot) {
+  function copyComputedStylesTree(liveEl, cloneEl, isPinnedRoot, imgPairs) {
     if (!liveEl || !cloneEl || typeof window.getComputedStyle !== 'function') {
       return;
     }
     var cs = window.getComputedStyle(liveEl);
     var isSvgNode = liveEl.namespaceURI === SVG_NS;
     var tagLower = liveEl.tagName ? liveEl.tagName.toLowerCase() : '';
+
+    if (tagLower === 'img' && imgPairs) {
+      imgPairs.push({ liveImg: liveEl, cloneImg: cloneEl });
+    }
 
     if (isSvgNode && tagLower !== 'svg') {
       for (var s = 0; s < SVG_COPY_STYLE_PROPS.length; s++) {
@@ -2220,18 +2320,6 @@
       cloneEl.style.boxSizing = 'border-box';
     }
 
-    if (liveEl.scrollLeft > 0 || liveEl.scrollTop > 0) {
-      cloneEl.style.overflow = 'hidden';
-      var innerShift = document.createElementNS(XHTML_NS, 'div');
-      innerShift.style.transform =
-        'translate(' + -liveEl.scrollLeft + 'px, ' + -liveEl.scrollTop + 'px)';
-      while (cloneEl.firstChild) {
-        innerShift.appendChild(cloneEl.firstChild);
-      }
-      cloneEl.appendChild(innerShift);
-      return;
-    }
-
     var liveChildren = liveEl.children;
     var ci = 0;
     for (var li = 0; li < liveChildren.length; li++) {
@@ -2243,9 +2331,20 @@
       if (isIgnoredExportNode(liveChild)) {
         cloneEl.removeChild(cloneChild);
       } else {
-        copyComputedStylesTree(liveChild, cloneChild, false);
+        copyComputedStylesTree(liveChild, cloneChild, false, imgPairs);
         ci++;
       }
+    }
+
+    if (liveEl.scrollLeft > 0 || liveEl.scrollTop > 0) {
+      cloneEl.style.overflow = 'hidden';
+      var innerShift = document.createElementNS(XHTML_NS, 'div');
+      innerShift.style.transform =
+        'translate(' + -liveEl.scrollLeft + 'px, ' + -liveEl.scrollTop + 'px)';
+      while (cloneEl.firstChild) {
+        innerShift.appendChild(cloneEl.firstChild);
+      }
+      cloneEl.appendChild(innerShift);
     }
   }
 
@@ -2311,10 +2410,11 @@
     exportBody.style.overflow = 'hidden';
     exportBody.style.backgroundColor = surfaceBg;
 
+    var imgPairs = [];
     var container = findExportContentContainer(vpH);
     if (container && hasDirectVisibleText(container)) {
       var directClone = container.cloneNode(true);
-      copyComputedStylesTree(container, directClone, true);
+      copyComputedStylesTree(container, directClone, true, imgPairs);
       exportBody.appendChild(directClone);
     } else if (container) {
       for (var i = 0; i < container.children.length; i++) {
@@ -2335,12 +2435,12 @@
           continue;
         }
         var cloneChild = child.cloneNode(true);
-        copyComputedStylesTree(child, cloneChild, true);
+        copyComputedStylesTree(child, cloneChild, true, imgPairs);
         exportBody.appendChild(cloneChild);
       }
     }
 
-    return inlineImagesForClone(exportBody).then(function () {
+    return inlineImagePairs(imgPairs).then(function () {
       var svgEl = document.createElementNS(SVG_NS, 'svg');
       svgEl.setAttribute('xmlns', SVG_NS);
       svgEl.setAttribute('width', String(vpW));
