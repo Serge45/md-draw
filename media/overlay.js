@@ -2047,9 +2047,240 @@
     });
   }
 
-  function drawAnnotationsOnExportContext(ctx, scrollX, scrollY) {
+  var COPY_STYLE_PROPS = [
+    'box-sizing',
+    'display',
+    'position',
+    'float',
+    'clear',
+    'vertical-align',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'margin-top',
+    'margin-right',
+    'margin-bottom',
+    'margin-left',
+    'border-top-width',
+    'border-top-style',
+    'border-top-color',
+    'border-right-width',
+    'border-right-style',
+    'border-right-color',
+    'border-bottom-width',
+    'border-bottom-style',
+    'border-bottom-color',
+    'border-left-width',
+    'border-left-style',
+    'border-left-color',
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+    'overflow',
+    'overflow-x',
+    'overflow-y',
+    'flex-direction',
+    'flex-wrap',
+    'justify-content',
+    'align-items',
+    'align-content',
+    'gap',
+    'row-gap',
+    'column-gap',
+    'flex-grow',
+    'flex-shrink',
+    'flex-basis',
+    'align-self',
+    'grid-template-columns',
+    'grid-template-rows',
+    'grid-column',
+    'grid-row',
+    'border-collapse',
+    'border-spacing',
+    'table-layout',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'line-height',
+    'letter-spacing',
+    'word-spacing',
+    'white-space',
+    'word-break',
+    'overflow-wrap',
+    'text-align',
+    'text-decoration',
+    'text-transform',
+    'text-indent',
+    'list-style-type',
+    'list-style-position',
+    'color',
+    'background-color',
+    'opacity',
+    'box-shadow',
+    'visibility'
+  ];
+
+  var SVG_COPY_STYLE_PROPS = [
+    'fill',
+    'stroke',
+    'stroke-width',
+    'stroke-dasharray',
+    'stroke-linecap',
+    'stroke-linejoin',
+    'opacity',
+    'visibility',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'color'
+  ];
+
+  var IGNORED_EXPORT_IDS = {
+    'mdo-canvas-layer': true,
+    'mdo-toolbar': true,
+    'mdo-toast': true,
+    'mdo-popover': true,
+    'mdo-import-input': true
+  };
+
+  var IGNORED_EXPORT_TAGS = {
+    SCRIPT: true,
+    STYLE: true,
+    LINK: true,
+    IFRAME: true,
+    NOSCRIPT: true
+  };
+
+  function isIgnoredExportNode(el) {
+    if (!el || el.nodeType !== 1) {
+      return false;
+    }
+    if (el.id && IGNORED_EXPORT_IDS[el.id]) {
+      return true;
+    }
+    var tag = el.tagName ? el.tagName.toUpperCase() : '';
+    return Boolean(IGNORED_EXPORT_TAGS[tag]);
+  }
+
+  function hasDirectVisibleText(el) {
+    var nodes = el.childNodes;
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].nodeType === 3 && /\S/.test(nodes[i].nodeValue || '')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function copyComputedStylesTree(liveEl, cloneEl, isPinnedRoot) {
+    if (!liveEl || !cloneEl || typeof window.getComputedStyle !== 'function') {
+      return;
+    }
+    var cs = window.getComputedStyle(liveEl);
+    var isSvgNode = liveEl.namespaceURI === SVG_NS;
+    var tagLower = liveEl.tagName ? liveEl.tagName.toLowerCase() : '';
+
+    if (isSvgNode && tagLower !== 'svg') {
+      for (var s = 0; s < SVG_COPY_STYLE_PROPS.length; s++) {
+        var sProp = SVG_COPY_STYLE_PROPS[s];
+        cloneEl.style.setProperty(sProp, cs.getPropertyValue(sProp));
+      }
+    } else {
+      for (var i = 0; i < COPY_STYLE_PROPS.length; i++) {
+        var prop = COPY_STYLE_PROPS[i];
+        cloneEl.style.setProperty(prop, cs.getPropertyValue(prop));
+      }
+      var bgImg = cs.getPropertyValue('background-image');
+      if (bgImg && bgImg.indexOf('gradient(') !== -1) {
+        cloneEl.style.setProperty('background-image', bgImg);
+      } else {
+        cloneEl.style.setProperty('background-image', 'none');
+      }
+      if (tagLower === 'svg' || tagLower === 'img') {
+        var boxRect = liveEl.getBoundingClientRect();
+        if (boxRect.width > 0) {
+          cloneEl.style.width = boxRect.width + 'px';
+        }
+        if (boxRect.height > 0) {
+          cloneEl.style.height = boxRect.height + 'px';
+        }
+      }
+    }
+
+    if (isPinnedRoot) {
+      var rect = liveEl.getBoundingClientRect();
+      cloneEl.style.position = 'absolute';
+      cloneEl.style.left = rect.left + 'px';
+      cloneEl.style.top = rect.top + 'px';
+      cloneEl.style.width = rect.width + 'px';
+      cloneEl.style.margin = '0px';
+      cloneEl.style.boxSizing = 'border-box';
+    }
+
+    if (liveEl.scrollLeft > 0 || liveEl.scrollTop > 0) {
+      cloneEl.style.overflow = 'hidden';
+      var innerShift = document.createElementNS(XHTML_NS, 'div');
+      innerShift.style.transform =
+        'translate(' + -liveEl.scrollLeft + 'px, ' + -liveEl.scrollTop + 'px)';
+      while (cloneEl.firstChild) {
+        innerShift.appendChild(cloneEl.firstChild);
+      }
+      cloneEl.appendChild(innerShift);
+      return;
+    }
+
+    var liveChildren = liveEl.children;
+    var ci = 0;
+    for (var li = 0; li < liveChildren.length; li++) {
+      var liveChild = liveChildren[li];
+      var cloneChild = cloneEl.children[ci];
+      if (!cloneChild) {
+        break;
+      }
+      if (isIgnoredExportNode(liveChild)) {
+        cloneEl.removeChild(cloneChild);
+      } else {
+        copyComputedStylesTree(liveChild, cloneChild, false);
+        ci++;
+      }
+    }
+  }
+
+  function findExportContentContainer(vpH) {
+    var container = document.querySelector('.crossnote[data-for="preview"]') || document.body;
+    for (var depth = 0; depth < 6; depth++) {
+      if (!container || hasDirectVisibleText(container)) {
+        break;
+      }
+      var visibleChildren = [];
+      for (var i = 0; i < container.children.length; i++) {
+        var ch = container.children[i];
+        if (!isIgnoredExportNode(ch)) {
+          var r = ch.getBoundingClientRect();
+          if (r.width > 0 || r.height > 0) {
+            visibleChildren.push({ el: ch, rect: r });
+          }
+        }
+      }
+      if (
+        visibleChildren.length === 1 &&
+        visibleChildren[0].rect.height >= vpH * 0.5 &&
+        visibleChildren[0].el.children.length > 1
+      ) {
+        container = visibleChildren[0].el;
+      } else {
+        break;
+      }
+    }
+    return container;
+  }
+
+  function drawAnnotationsOnExportContext(ctx, offsetX, offsetY) {
     ctx.save();
-    ctx.translate(-scrollX, -scrollY);
+    ctx.translate(offsetX, offsetY);
     for (var i = 0; i < state.strokes.length; i++) {
       drawCommittedStroke(ctx, state.strokes[i]);
     }
@@ -2067,24 +2298,49 @@
     ctx.restore();
   }
 
-  function renderFullViewportCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg) {
-    var cloneBody = document.body.cloneNode(true);
-    var stripIds = ['mdo-canvas-layer', 'mdo-toolbar', 'mdo-toast', 'mdo-popover', 'mdo-import-input'];
-    for (var i = 0; i < stripIds.length; i++) {
-      var node = cloneBody.querySelector('#' + stripIds[i]);
-      if (node && node.parentNode) {
-        node.parentNode.removeChild(node);
-      }
+  function renderFullViewportCanvas(vpW, vpH, offsetX, offsetY, exportDpr, surfaceBg) {
+    var exportBody = document.createElementNS(XHTML_NS, 'body');
+    if (document.body && document.body.className) {
+      exportBody.className = document.body.className;
     }
-    var forbidden = cloneBody.querySelectorAll('script, iframe, noscript');
-    for (var f = 0; f < forbidden.length; f++) {
-      if (forbidden[f].parentNode) {
-        forbidden[f].parentNode.removeChild(forbidden[f]);
+    exportBody.style.margin = '0';
+    exportBody.style.padding = '0';
+    exportBody.style.width = vpW + 'px';
+    exportBody.style.height = vpH + 'px';
+    exportBody.style.position = 'relative';
+    exportBody.style.overflow = 'hidden';
+    exportBody.style.backgroundColor = surfaceBg;
+
+    var container = findExportContentContainer(vpH);
+    if (container && hasDirectVisibleText(container)) {
+      var directClone = container.cloneNode(true);
+      copyComputedStylesTree(container, directClone, true);
+      exportBody.appendChild(directClone);
+    } else if (container) {
+      for (var i = 0; i < container.children.length; i++) {
+        var child = container.children[i];
+        if (isIgnoredExportNode(child)) {
+          continue;
+        }
+        var rect = child.getBoundingClientRect();
+        if (rect.width <= 0 && rect.height <= 0) {
+          continue;
+        }
+        if (
+          rect.bottom < -40 ||
+          rect.top > vpH + 40 ||
+          rect.right < -40 ||
+          rect.left > vpW + 40
+        ) {
+          continue;
+        }
+        var cloneChild = child.cloneNode(true);
+        copyComputedStylesTree(child, cloneChild, true);
+        exportBody.appendChild(cloneChild);
       }
     }
 
-    return inlineImagesForClone(cloneBody).then(function () {
-      var docW = Math.max(document.documentElement.scrollWidth || 0, vpW);
+    return inlineImagesForClone(exportBody).then(function () {
       var svgEl = document.createElementNS(SVG_NS, 'svg');
       svgEl.setAttribute('xmlns', SVG_NS);
       svgEl.setAttribute('width', String(vpW));
@@ -2100,22 +2356,20 @@
       if (document.documentElement && document.documentElement.className) {
         htmlWrap.className = document.documentElement.className;
       }
+      htmlWrap.style.margin = '0';
+      htmlWrap.style.padding = '0';
       htmlWrap.style.width = vpW + 'px';
       htmlWrap.style.height = vpH + 'px';
       htmlWrap.style.overflow = 'hidden';
 
       var headEl = document.createElementNS(XHTML_NS, 'head');
       var styleEl = document.createElementNS(XHTML_NS, 'style');
-      styleEl.textContent = collectAccessibleCssText();
+      styleEl.textContent =
+        collectAccessibleCssText() + '\nhtml, body { margin: 0; padding: 0; overflow: hidden; }';
       headEl.appendChild(styleEl);
 
-      cloneBody.style.width = docW + 'px';
-      cloneBody.style.transformOrigin = 'top left';
-      cloneBody.style.transform = 'translate(' + -scrollX + 'px, ' + -scrollY + 'px)';
-      cloneBody.style.overflow = 'visible';
-
       htmlWrap.appendChild(headEl);
-      htmlWrap.appendChild(cloneBody);
+      htmlWrap.appendChild(exportBody);
       fo.appendChild(htmlWrap);
       svgEl.appendChild(fo);
 
@@ -2144,7 +2398,7 @@
             outCtx.fillStyle = surfaceBg;
             outCtx.fillRect(0, 0, vpW, vpH);
             outCtx.drawImage(img, 0, 0, vpW, vpH);
-            drawAnnotationsOnExportContext(outCtx, scrollX, scrollY);
+            drawAnnotationsOnExportContext(outCtx, offsetX, offsetY);
             canvasToPngBlob(outCanvas).then(resolve, reject);
           } catch (drawErr) {
             reject(drawErr);
@@ -2161,7 +2415,7 @@
     });
   }
 
-  function renderFallbackOverlayCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg) {
+  function renderFallbackOverlayCanvas(vpW, vpH, offsetX, offsetY, exportDpr, surfaceBg) {
     var outCanvas = document.createElement('canvas');
     outCanvas.width = Math.max(1, Math.round(vpW * exportDpr));
     outCanvas.height = Math.max(1, Math.round(vpH * exportDpr));
@@ -2169,7 +2423,7 @@
     outCtx.setTransform(exportDpr, 0, 0, exportDpr, 0, 0);
     outCtx.fillStyle = surfaceBg;
     outCtx.fillRect(0, 0, vpW, vpH);
-    drawAnnotationsOnExportContext(outCtx, scrollX, scrollY);
+    drawAnnotationsOnExportContext(outCtx, offsetX, offsetY);
     return canvasToPngBlob(outCanvas);
   }
 
@@ -2228,16 +2482,22 @@
 
     var vpW = Math.max(1, document.documentElement.clientWidth || window.innerWidth || 800);
     var vpH = Math.max(1, document.documentElement.clientHeight || window.innerHeight || 600);
-    var scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0;
-    var scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    var canvasRect = liveCanvas
+      ? liveCanvas.getBoundingClientRect()
+      : { left: -(window.scrollX || 0), top: -(window.scrollY || 0) };
+    var offsetX = canvasRect.left;
+    var offsetY = canvasRect.top;
     var exportDpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     var surfaceBg = resolveSurfaceBgColor();
     var usedFallback = false;
 
-    return renderFullViewportCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg)
+    return Promise.resolve()
+      .then(function () {
+        return renderFullViewportCanvas(vpW, vpH, offsetX, offsetY, exportDpr, surfaceBg);
+      })
       .catch(function () {
         usedFallback = true;
-        return renderFallbackOverlayCanvas(vpW, vpH, scrollX, scrollY, exportDpr, surfaceBg);
+        return renderFallbackOverlayCanvas(vpW, vpH, offsetX, offsetY, exportDpr, surfaceBg);
       })
       .then(function (blob) {
         triggerBlobDownload(blob, getDocBaseFilename() + '-' + formatTimestamp() + '.png');
