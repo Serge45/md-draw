@@ -7,7 +7,7 @@ on:
 
 jobs:
   publish:
-    name: Build & Publish to VS Code Marketplace
+    name: Build & Publish to VS Code Marketplace & Open VSX
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -34,11 +34,39 @@ jobs:
           npx --yes @vscode/vsce@^4.1.1 --version
           npx --yes @vscode/vsce@^4.1.1 package --out markdown-draw-overlay.vsix
 
-      - name: Publish to VS Code Marketplace (OIDC)
-        run: npx --yes @vscode/vsce@^4.1.1 publish --oidc --packagePath markdown-draw-overlay.vsix
-
       - name: Attach .vsix to GitHub Release
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" markdown-draw-overlay.vsix --clobber
+
+      - name: Publish to VS Code Marketplace (OIDC)
+        run: npx --yes @vscode/vsce@^4.1.1 publish --oidc --skip-duplicate --packagePath markdown-draw-overlay.vsix
+
+      - name: Publish to Open VSX (Cursor / Antigravity IDE)
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          EXISTS=$(node -e '
+            const pkg = require("./package.json");
+            const url = "https://open-vsx.org/api/" + encodeURIComponent(pkg.publisher) + "/" + encodeURIComponent(pkg.name) + "/" + encodeURIComponent(pkg.version);
+            fetch(url)
+              .then(async (r) => {
+                const body = await r.json().catch(() => ({}));
+                console.log(r.ok && !body.error ? "true" : "false");
+              })
+              .catch(() => console.log("false"));
+          ')
+          if [ "$EXISTS" = "true" ]; then
+            echo "Version already published on Open VSX; skipping."
+            exit 0
+          fi
+          npx --yes ovsx@^1.4.0 --version
+          if [ -n "$OVSX_PAT" ]; then
+            echo "Publishing to Open VSX using OVSX_PAT..."
+            npx --yes ovsx@^1.4.0 publish markdown-draw-overlay.vsix
+          else
+            echo "OVSX_PAT not set; publishing to Open VSX using OIDC Trusted Publishing..."
+            unset OVSX_PAT
+            npx --yes ovsx@^1.4.0 publish --trusted-publishing markdown-draw-overlay.vsix
+          fi
