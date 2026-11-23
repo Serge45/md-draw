@@ -27,14 +27,10 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  cursor: crosshair;
-}
-
-#mdo-canvas-layer.mdo-draw-mode.mdo-tool-eraser #mdo-live-canvas {
   cursor: none;
 }
 
-#mdo-canvas-layer.mdo-draw-mode.mdo-tool-eraser.mdo-pointer-outside #mdo-live-canvas {
+#mdo-canvas-layer.mdo-draw-mode.mdo-pointer-outside #mdo-live-canvas {
   cursor: crosshair;
 }
 

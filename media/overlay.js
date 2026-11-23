@@ -198,7 +198,8 @@
     sizeIndex: 1, // 0 = S, 1 = M, 2 = L
     toolColors: {
       pen: '#EF4444',
-      highlighter: '#FACC15'
+      highlighter: '#FACC15',
+      laser: '#EF4444'
     },
     strokes: [],
     undoStack: [],
@@ -224,7 +225,7 @@
   var eraseStartPt = null;
   var eraseLastPt = null;
   var eraseMaxDist = 0;
-  var eraserHoverPt = null;
+  var hoverPt = null;
 
   var cssWidth = 0;
   var cssHeight = 0;
@@ -437,6 +438,9 @@
     if (state.tool === 'highlighter') {
       return state.toolColors.highlighter;
     }
+    if (state.tool === 'laser') {
+      return state.toolColors.laser;
+    }
     return state.toolColors.pen;
   }
 
@@ -516,7 +520,7 @@
     }
     if (nextMode === 'browse') {
       cancelOrCommitInFlightInteraction();
-      eraserHoverPt = null;
+      hoverPt = null;
       if (canvasLayer) {
         canvasLayer.classList.add('mdo-pointer-outside');
       }
@@ -535,9 +539,6 @@
 
   function setTool(nextTool) {
     state.tool = nextTool;
-    if (nextTool !== 'eraser') {
-      eraserHoverPt = null;
-    }
     if (state.mode !== 'draw') {
       setMode('draw', false);
     } else {
@@ -549,9 +550,11 @@
   function selectColor(colorValue) {
     if (state.tool === 'highlighter') {
       state.toolColors.highlighter = colorValue;
+    } else if (state.tool === 'laser') {
+      state.toolColors.laser = colorValue;
     } else {
       state.toolColors.pen = colorValue;
-      if (state.tool === 'eraser' || state.tool === 'laser') {
+      if (state.tool === 'eraser') {
         state.tool = 'pen';
       }
     }
@@ -786,24 +789,25 @@
     if (!laserStroke || !laserStroke.points || laserStroke.points.length === 0 || alpha <= 0) {
       return;
     }
+    var glowColor = resolveColor(laserStroke.color || '#EF4444');
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Outer red glow pass
+    // Outer glow pass
     ctx.globalAlpha = alpha * 0.92;
-    ctx.strokeStyle = '#FF2A2A';
-    ctx.fillStyle = '#FF2A2A';
-    ctx.shadowColor = 'rgba(255, 42, 42, 0.92)';
+    ctx.strokeStyle = glowColor;
+    ctx.fillStyle = glowColor;
+    ctx.shadowColor = glowColor;
     ctx.shadowBlur = 14;
     ctx.lineWidth = laserStroke.width * 1.45;
     drawSmoothPath(ctx, laserStroke.points, laserStroke.width * 1.45);
 
     // Inner bright core pass
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = '#FFF1F1';
-    ctx.fillStyle = '#FFF1F1';
-    ctx.shadowColor = 'rgba(255, 220, 220, 0.85)';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = glowColor;
     ctx.shadowBlur = 4;
     ctx.lineWidth = laserStroke.width * 0.48;
     drawSmoothPath(ctx, laserStroke.points, laserStroke.width * 0.48);
@@ -811,22 +815,107 @@
     ctx.restore();
   }
 
-  function drawEraserCursor(ctx, pt) {
-    if (!pt || state.mode !== 'draw' || state.tool !== 'eraser') {
+  function drawToolCursor(ctx, pt) {
+    if (!pt || state.mode !== 'draw') {
       return;
     }
-    var radius = getActiveWidth();
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = isLightSurface()
-      ? 'rgba(0, 0, 0, 0.08)'
-      : 'rgba(255, 255, 255, 0.10)';
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isLightSurface()
+    var width = getActiveWidth();
+    var color = resolveColor(getActiveColor());
+    var isLight = isLightSurface();
+    var contrastStroke = isLight
       ? 'rgba(15, 23, 42, 0.72)'
-      : 'rgba(248, 250, 252, 0.82)';
+      : 'rgba(248, 250, 252, 0.85)';
+
+    ctx.save();
+
+    if (state.tool === 'eraser') {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, width, 0, Math.PI * 2);
+      ctx.fillStyle = isLight
+        ? 'rgba(0, 0, 0, 0.08)'
+        : 'rgba(255, 255, 255, 0.10)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = contrastStroke;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (state.tool === 'laser') {
+      var laserR = Math.max(3.5, width * 0.95);
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, laserR, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = Math.max(10, width * 2.4);
+      ctx.globalAlpha = 0.95;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, Math.max(1.5, laserR * 0.45), 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 3;
+      ctx.globalAlpha = 1;
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (state.tool === 'highlighter') {
+      var hiR = width / 2;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, hiR, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.35;
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = contrastStroke;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    var dotR = Math.max(2, width / 2);
+
+    if (state.tool === 'arrow' || state.tool === 'rect') {
+      var innerGap = dotR + 3;
+      var outerReach = dotR + 8;
+      ctx.beginPath();
+      ctx.moveTo(pt.x, pt.y - outerReach);
+      ctx.lineTo(pt.x, pt.y - innerGap);
+      ctx.moveTo(pt.x, pt.y + innerGap);
+      ctx.lineTo(pt.x, pt.y + outerReach);
+      ctx.moveTo(pt.x - outerReach, pt.y);
+      ctx.lineTo(pt.x - innerGap, pt.y);
+      ctx.moveTo(pt.x + innerGap, pt.y);
+      ctx.lineTo(pt.x + outerReach, pt.y);
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = contrastStroke;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = contrastStroke;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    // Default: pen
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = contrastStroke;
     ctx.stroke();
     ctx.restore();
   }
@@ -871,8 +960,8 @@
       drawLaserStroke(liveCtx, lStroke, alpha);
     }
 
-    if (eraserHoverPt) {
-      drawEraserCursor(liveCtx, eraserHoverPt);
+    if (hoverPt) {
+      drawToolCursor(liveCtx, hoverPt);
     }
   }
 
@@ -1278,12 +1367,16 @@
     }
 
     var pt = getCanvasPoint(e);
-
-    if (state.tool === 'eraser') {
-      eraserHoverPt = pt;
+    if (e.pointerType !== 'touch') {
+      hoverPt = pt;
       if (canvasLayer) {
         canvasLayer.classList.remove('mdo-pointer-outside');
       }
+    } else {
+      hoverPt = null;
+    }
+
+    if (state.tool === 'eraser') {
       erasePreSnapshot = state.strokes.slice();
       eraseDidMutate = false;
       eraseStartPt = pt;
@@ -1295,6 +1388,7 @@
 
     if (state.tool === 'laser') {
       activeLaserStroke = {
+        color: getActiveColor(),
         width: getActiveWidth(),
         points: [pt],
         endedAt: null
@@ -1337,12 +1431,14 @@
       return;
     }
 
-    if (state.tool === 'eraser' && activePointerId === null) {
-      eraserHoverPt = getCanvasPoint(e);
-      if (canvasLayer) {
-        canvasLayer.classList.remove('mdo-pointer-outside');
+    if (activePointerId === null) {
+      if (e.pointerType !== 'touch') {
+        hoverPt = getCanvasPoint(e);
+        if (canvasLayer) {
+          canvasLayer.classList.remove('mdo-pointer-outside');
+        }
+        renderLiveCanvas();
       }
-      renderLiveCanvas();
       return;
     }
 
@@ -1368,7 +1464,9 @@
           }
         }
         eraseLastPt = pt;
-        eraserHoverPt = pt;
+        if (e.pointerType !== 'touch') {
+          hoverPt = pt;
+        }
       }
       if (anyErased) {
         renderStaticCanvas();
@@ -1379,13 +1477,18 @@
 
     if (activeLaserStroke) {
       var laserAdded = false;
+      var lastLaserPt = null;
       for (var l = 0; l < list.length; l++) {
         var lPt = getCanvasPoint(list[l]);
+        lastLaserPt = lPt;
         if (appendSmoothedPoint(activeLaserStroke.points, lPt)) {
           laserAdded = true;
         }
       }
-      if (laserAdded) {
+      if (e.pointerType !== 'touch' && lastLaserPt) {
+        hoverPt = lastLaserPt;
+      }
+      if (laserAdded || e.pointerType !== 'touch') {
         renderLiveCanvas();
       }
       return;
@@ -1399,12 +1502,18 @@
 
     if (activeStroke.kind === 'arrow') {
       activeStroke.end = e.shiftKey ? snapStraightLine(activeStroke.start, latestPt, 'angle15') : latestPt;
+      if (e.pointerType !== 'touch') {
+        hoverPt = activeStroke.end;
+      }
       renderLiveCanvas();
       return;
     }
 
     if (activeStroke.kind === 'rect') {
       activeStroke.end = e.shiftKey ? snapStraightLine(activeStroke.start, latestPt, 'square') : latestPt;
+      if (e.pointerType !== 'touch') {
+        hoverPt = activeStroke.end;
+      }
       renderLiveCanvas();
       return;
     }
@@ -1414,6 +1523,9 @@
       activeStroke.end = e.shiftKey
         ? snapStraightLine(activeStroke.start, latestPt, 'magnetic')
         : latestPt;
+      if (e.pointerType !== 'touch') {
+        hoverPt = activeStroke.end;
+      }
       renderLiveCanvas();
       return;
     }
@@ -1425,7 +1537,10 @@
         added = true;
       }
     }
-    if (added) {
+    if (e.pointerType !== 'touch') {
+      hoverPt = latestPt;
+    }
+    if (added || e.pointerType !== 'touch') {
       renderLiveCanvas();
     }
   }
@@ -1442,6 +1557,23 @@
         }
       } catch (_err) {
         // Ignore release errors
+      }
+    }
+
+    if (e.pointerType === 'touch' || isCancel) {
+      hoverPt = null;
+      if (canvasLayer) {
+        canvasLayer.classList.add('mdo-pointer-outside');
+      }
+    } else {
+      var endPt = getCanvasPoint(e);
+      if (endPt.x < 0 || endPt.y < 0 || endPt.x > cssWidth || endPt.y > cssHeight) {
+        hoverPt = null;
+        if (canvasLayer) {
+          canvasLayer.classList.add('mdo-pointer-outside');
+        }
+      } else {
+        hoverPt = endPt;
       }
     }
 
@@ -1498,8 +1630,8 @@
   }
 
   function handlePointerLeave() {
-    if (eraserHoverPt && activePointerId === null) {
-      eraserHoverPt = null;
+    if (hoverPt && activePointerId === null) {
+      hoverPt = null;
       if (canvasLayer) {
         canvasLayer.classList.add('mdo-pointer-outside');
       }
@@ -2708,7 +2840,6 @@
     var t = msg();
     var isDraw = state.mode === 'draw';
     canvasLayer.classList.toggle('mdo-draw-mode', isDraw);
-    canvasLayer.classList.toggle('mdo-tool-eraser', isDraw && state.tool === 'eraser');
 
     toolbar.classList.toggle('mdo-collapsed', state.collapsed);
     toolbar.classList.toggle('mdo-draw-active', isDraw);
@@ -2745,7 +2876,7 @@
     for (var cVal in colorButtons) {
       if (Object.prototype.hasOwnProperty.call(colorButtons, cVal)) {
         var cBtn = colorButtons[cVal];
-        var cActive = cVal === activeColor && state.tool !== 'laser' && state.tool !== 'eraser';
+        var cActive = cVal === activeColor && state.tool !== 'eraser';
         cBtn.classList.toggle('mdo-active', cActive);
         cBtn.setAttribute('aria-pressed', String(cActive));
       }
