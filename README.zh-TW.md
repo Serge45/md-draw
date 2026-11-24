@@ -1,5 +1,9 @@
 # Markdown Draw Overlay
 
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/serge45-md-draw.markdown-draw-overlay?label=VS%20Code%20Marketplace&logo=visualstudiocode&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=serge45-md-draw.markdown-draw-overlay)
+[![Open VSX Version](https://img.shields.io/open-vsx/v/serge45-md-draw/markdown-draw-overlay?label=Open%20VSX&logo=eclipseide&color=A60EE5)](https://open-vsx.org/extension/serge45-md-draw/markdown-draw-overlay)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/serge45-md-draw/markdown-draw-overlay?label=Open%20VSX%20Downloads&color=A60EE5)](https://open-vsx.org/extension/serge45-md-draw/markdown-draw-overlay)
+
 **語言：** [English](README.md) | 繁體中文
 
 在 VS Code 原生的 **Markdown Preview**（並支援選配整合 **Markdown Preview Enhanced**）畫面上直接手繪標註、螢光筆劃重點、與使用 1.5 秒自動漸隱雷射筆解說，完全不影響原本閱讀、選取複製文字與點擊超連結的體驗。

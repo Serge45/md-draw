@@ -1,5 +1,9 @@
 # Markdown Draw Overlay
 
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/serge45-md-draw.markdown-draw-overlay?label=VS%20Code%20Marketplace&logo=visualstudiocode&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=serge45-md-draw.markdown-draw-overlay)
+[![Open VSX Version](https://img.shields.io/open-vsx/v/serge45-md-draw/markdown-draw-overlay?label=Open%20VSX&logo=eclipseide&color=A60EE5)](https://open-vsx.org/extension/serge45-md-draw/markdown-draw-overlay)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/serge45-md-draw/markdown-draw-overlay?label=Open%20VSX%20Downloads&color=A60EE5)](https://open-vsx.org/extension/serge45-md-draw/markdown-draw-overlay)
+
 **Language:** English | [繁體中文](README.zh-TW.md)
 
 Draw, highlight, and present with an auto-fading laser pointer directly on VS Code's native **Markdown Preview** (with optional **Markdown Preview Enhanced** integration) — without blocking text selection, link clicking, or scrolling.
