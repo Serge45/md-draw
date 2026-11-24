@@ -5,6 +5,25 @@ All notable changes to **Markdown Draw Overlay** will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-24
+
+### Added
+- **Select, Move, Resize & Restyle Tool (`V`)**:
+  - Click or drag a marquee box to select single or multiple annotations (`Shift` to toggle/add, `Ctrl/Cmd + A` to select all).
+  - Drag selected annotations to move, drag any of the 4 corner handles to resize (hold `Shift` for proportional scaling), nudge with arrow keys (`Shift` for 10px), and press `Delete`/`Backspace` to remove.
+  - Click color swatches or `S / M / L` size buttons while items are selected to recolor or change stroke width in-place; press `Esc` once to clear selection and again to return to Browse Mode.
+- **Markdown Block Anchoring**:
+  - Automatically anchors annotations to underlying Markdown blocks (`h1`–`h6`, `p`, `pre`, `table`, `blockquote`, `li`, `img`, `figure`, `hr`) so strokes follow layout reflow, zoom, and preview resize.
+  - Moving or resizing annotations re-anchors them to the new target block and persists anchor metadata in per-document storage and `.mdo.json`.
+- **Unified Tool Cursors & Laser Pointer Colors**:
+  - Added color- and size-matched live canvas cursors for Pen, Highlighter, Arrow/Rectangle (center dot + crosshair), Laser Pointer (glowing spot), and Eraser, plus independent color selection for Laser Pointer.
+- **Open VSX Publishing Workflow**:
+  - Updated `.github/workflows/publish.yml` to publish to both VS Code Marketplace and Open VSX Registry (Cursor / Antigravity IDE).
+
+### Fixed
+- Aligned exported and clipboard-copied PNG screenshots accurately at any scroll position.
+- Inlined embedded Markdown images into PNG exports via canvas/CORS without requiring `connect-src` fetch under strict Webview CSP.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added
