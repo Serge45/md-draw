@@ -34,6 +34,18 @@
   cursor: crosshair;
 }
 
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-select #mdo-live-canvas {
+  cursor: default;
+}
+
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-select.mdo-select-move #mdo-live-canvas {
+  cursor: move;
+}
+
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-select.mdo-select-dragging #mdo-live-canvas {
+  cursor: grabbing;
+}
+
 /* Floating Frosted-Glass Toolbar */
 #mdo-toolbar {
   position: fixed;

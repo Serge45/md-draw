@@ -39,7 +39,7 @@
     eraser: [10, 18, 30]
   };
 
-  var TOOL_IDS = ['pen', 'highlighter', 'arrow', 'rect', 'laser', 'eraser'];
+  var TOOL_IDS = ['select', 'pen', 'highlighter', 'arrow', 'rect', 'laser', 'eraser'];
 
   var I18N = {
     en: {
@@ -54,6 +54,7 @@
       collapseToolbar: 'Collapse toolbar',
       expandToolbar: 'Expand toolbar',
       tools: {
+        select: 'Select & Move (V · click or drag to select, drag to move, Del to delete)',
         pen: 'Pen (hold Shift for straight line)',
         highlighter: 'Highlighter (hold Shift for straight line)',
         arrow: 'Arrow (hold Shift for 15° snap)',
@@ -110,6 +111,7 @@
       collapseToolbar: '收合標註工具列',
       expandToolbar: '展開標註工具列',
       tools: {
+        select: '選取與移動 (V · 點擊或框選，拖曳移動，Delete 刪除)',
         pen: '畫筆 (Pen · 按住 Shift 可拉直線)',
         highlighter: '螢光筆 (Highlighter · 按住 Shift 可拉直線)',
         arrow: '箭頭 (Arrow · 按住 Shift 鎖定 15°)',
@@ -227,6 +229,15 @@
   var eraseMaxDist = 0;
   var hoverPt = null;
 
+  var selectedIndices = [];
+  var selectMode = null; // null | 'drag' | 'marquee'
+  var selectStartPt = null;
+  var selectCurrentPt = null;
+  var selectMarqueeBase = [];
+  var selectDragDx = 0;
+  var selectDragDy = 0;
+  var selectDidMove = false;
+
   var cssWidth = 0;
   var cssHeight = 0;
   var effectiveDpr = 1;
@@ -294,6 +305,9 @@
   }
 
   function getToolIcon(toolId) {
+    if (toolId === 'select') {
+      return createSvgIcon([{ d: 'M4 4l7.07 17 2.51-7.39L21 11.07z' }]);
+    }
     if (toolId === 'pen') {
       return createSvgIcon([
         { d: 'M12 20h9' },
@@ -483,7 +497,9 @@
       state.redoStack.shift();
     }
     state.strokes = state.undoStack.pop();
+    clearSelection();
     renderStaticCanvas();
+    renderLiveCanvas();
     updateUI();
     scheduleSaveStrokes();
   }
@@ -497,7 +513,9 @@
       state.undoStack.shift();
     }
     state.strokes = state.redoStack.pop();
+    clearSelection();
     renderStaticCanvas();
+    renderLiveCanvas();
     updateUI();
     scheduleSaveStrokes();
   }
@@ -508,7 +526,9 @@
     }
     pushUndoSnapshot(state.strokes.slice());
     state.strokes = [];
+    clearSelection();
     renderStaticCanvas();
+    renderLiveCanvas();
     updateUI();
     scheduleSaveStrokes();
     showToast(msg().toastCleared);
@@ -520,6 +540,7 @@
     }
     if (nextMode === 'browse') {
       cancelOrCommitInFlightInteraction();
+      clearSelection();
       hoverPt = null;
       if (canvasLayer) {
         canvasLayer.classList.add('mdo-pointer-outside');
@@ -538,6 +559,9 @@
   }
 
   function setTool(nextTool) {
+    if (nextTool !== 'select') {
+      clearSelection();
+    }
     state.tool = nextTool;
     if (state.mode !== 'draw') {
       setMode('draw', false);
@@ -554,7 +578,8 @@
       state.toolColors.laser = colorValue;
     } else {
       state.toolColors.pen = colorValue;
-      if (state.tool === 'eraser') {
+      if (state.tool === 'eraser' || state.tool === 'select') {
+        clearSelection();
         state.tool = 'pen';
       }
     }
@@ -816,7 +841,7 @@
   }
 
   function drawToolCursor(ctx, pt) {
-    if (!pt || state.mode !== 'draw') {
+    if (!pt || state.mode !== 'draw' || state.tool === 'select') {
       return;
     }
     var width = getActiveWidth();
@@ -920,6 +945,58 @@
     ctx.restore();
   }
 
+  function drawSelectionOverlay(ctx) {
+    if (state.mode !== 'draw' || state.tool !== 'select') {
+      return;
+    }
+    var dx = selectDidMove ? selectDragDx : 0;
+    var dy = selectDidMove ? selectDragDy : 0;
+    var bbox = getSelectionBBox(selectedIndices, dx, dy);
+    if (bbox) {
+      var pad = 6;
+      var x = bbox.minX - pad;
+      var y = bbox.minY - pad;
+      var w = bbox.maxX - bbox.minX + pad * 2;
+      var h = bbox.maxY - bbox.minY + pad * 2;
+      ctx.save();
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.06)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+
+      var hs = 6;
+      var corners = [
+        { x: x, y: y },
+        { x: x + w, y: y },
+        { x: x + w, y: y + h },
+        { x: x, y: y + h }
+      ];
+      ctx.fillStyle = '#FFFFFF';
+      for (var c = 0; c < corners.length; c++) {
+        ctx.fillRect(corners[c].x - hs / 2, corners[c].y - hs / 2, hs, hs);
+        ctx.strokeRect(corners[c].x - hs / 2, corners[c].y - hs / 2, hs, hs);
+      }
+      ctx.restore();
+    }
+
+    if (selectMode === 'marquee' && selectStartPt && selectCurrentPt) {
+      var mx = Math.min(selectStartPt.x, selectCurrentPt.x);
+      var my = Math.min(selectStartPt.y, selectCurrentPt.y);
+      var mw = Math.abs(selectCurrentPt.x - selectStartPt.x);
+      var mh = Math.abs(selectCurrentPt.y - selectStartPt.y);
+      ctx.save();
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+      ctx.fillRect(mx, my, mw, mh);
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(mx, my, mw, mh);
+      ctx.restore();
+    }
+  }
+
   function renderStaticCanvas() {
     if (!staticCtx || cssWidth <= 0 || cssHeight <= 0) {
       return;
@@ -929,7 +1006,11 @@
     staticCtx.clearRect(0, 0, staticCanvas.width, staticCanvas.height);
     staticCtx.restore();
 
+    var hideSelected = selectMode === 'drag' && selectDidMove;
     for (var i = 0; i < state.strokes.length; i++) {
+      if (hideSelected && isIndexSelected(i)) {
+        continue;
+      }
       drawCommittedStroke(staticCtx, state.strokes[i]);
     }
   }
@@ -944,6 +1025,18 @@
     liveCtx.setTransform(1, 0, 0, 1, 0, 0);
     liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
     liveCtx.restore();
+
+    if (selectMode === 'drag' && selectDidMove && selectedIndices.length > 0) {
+      liveCtx.save();
+      liveCtx.translate(selectDragDx, selectDragDy);
+      for (var s = 0; s < selectedIndices.length; s++) {
+        var idx = selectedIndices[s];
+        if (state.strokes[idx]) {
+          drawCommittedStroke(liveCtx, state.strokes[idx]);
+        }
+      }
+      liveCtx.restore();
+    }
 
     if (activeStroke) {
       drawCommittedStroke(liveCtx, activeStroke);
@@ -960,7 +1053,9 @@
       drawLaserStroke(liveCtx, lStroke, alpha);
     }
 
-    if (hoverPt) {
+    if (state.mode === 'draw' && state.tool === 'select') {
+      drawSelectionOverlay(liveCtx);
+    } else if (hoverPt) {
       drawToolCursor(liveCtx, hoverPt);
     }
   }
@@ -1081,6 +1176,232 @@
       pts.push(segs[i][0], segs[i][1]);
     }
     return getStrokeBBox(pts);
+  }
+
+  // Selection & Move Helpers
+  function isIndexSelected(idx) {
+    return selectedIndices.indexOf(idx) !== -1;
+  }
+
+  function clearSelection() {
+    selectedIndices = [];
+    selectMode = null;
+    selectStartPt = null;
+    selectCurrentPt = null;
+    selectMarqueeBase = [];
+    selectDragDx = 0;
+    selectDragDy = 0;
+    selectDidMove = false;
+    if (canvasLayer) {
+      canvasLayer.classList.remove('mdo-select-move');
+      canvasLayer.classList.remove('mdo-select-dragging');
+    }
+  }
+
+  function cloneStrokeTranslated(stroke, dx, dy) {
+    var kind = stroke.kind || 'freehand';
+    if (kind === 'freehand') {
+      var pts = [];
+      var srcPts = stroke.points || [];
+      for (var i = 0; i < srcPts.length; i++) {
+        pts.push({ x: srcPts[i].x + dx, y: srcPts[i].y + dy });
+      }
+      return {
+        kind: 'freehand',
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        opacity: stroke.opacity,
+        points: pts
+      };
+    }
+    return {
+      kind: kind,
+      tool: stroke.tool,
+      color: stroke.color,
+      width: stroke.width,
+      opacity: stroke.opacity,
+      start: { x: stroke.start.x + dx, y: stroke.start.y + dy },
+      end: { x: stroke.end.x + dx, y: stroke.end.y + dy }
+    };
+  }
+
+  function getSelectionBBox(indices, dx, dy) {
+    if (!indices || indices.length === 0) {
+      return null;
+    }
+    var shiftX = dx || 0;
+    var shiftY = dy || 0;
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    var found = false;
+    for (var i = 0; i < indices.length; i++) {
+      var stroke = state.strokes[indices[i]];
+      if (!stroke) {
+        continue;
+      }
+      var b = getAnyStrokeBBox(stroke);
+      if (!isFinite(b.minX) || !isFinite(b.minY) || !isFinite(b.maxX) || !isFinite(b.maxY)) {
+        continue;
+      }
+      var pad = Math.max(4, stroke.width * 0.5);
+      if (b.minX - pad + shiftX < minX) minX = b.minX - pad + shiftX;
+      if (b.minY - pad + shiftY < minY) minY = b.minY - pad + shiftY;
+      if (b.maxX + pad + shiftX > maxX) maxX = b.maxX + pad + shiftX;
+      if (b.maxY + pad + shiftY > maxY) maxY = b.maxY + pad + shiftY;
+      found = true;
+    }
+    return found ? { minX: minX, minY: minY, maxX: maxX, maxY: maxY } : null;
+  }
+
+  function isPointInBBox(pt, bbox, pad) {
+    if (!pt || !bbox) {
+      return false;
+    }
+    var p = pad || 0;
+    return (
+      pt.x >= bbox.minX - p &&
+      pt.x <= bbox.maxX + p &&
+      pt.y >= bbox.minY - p &&
+      pt.y <= bbox.maxY + p
+    );
+  }
+
+  function hitTestStrokeAtPoint(pt) {
+    for (var i = state.strokes.length - 1; i >= 0; i--) {
+      var stroke = state.strokes[i];
+      var kind = stroke.kind || 'freehand';
+      var pad = Math.max(8, stroke.width * 0.5 + 5);
+      var bbox = getAnyStrokeBBox(stroke);
+      if (!isPointInBBox(pt, bbox, pad)) {
+        continue;
+      }
+      if (kind !== 'freehand') {
+        var shapeSegs = getShapeSegments(stroke);
+        for (var s = 0; s < shapeSegs.length; s++) {
+          if (Math.sqrt(distToSegmentSq(pt, shapeSegs[s][0], shapeSegs[s][1])) <= pad) {
+            return i;
+          }
+        }
+      } else if (distPointToPolyline(pt, stroke.points) <= pad) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function getStrokesInMarquee(a, b) {
+    var mMinX = Math.min(a.x, b.x);
+    var mMaxX = Math.max(a.x, b.x);
+    var mMinY = Math.min(a.y, b.y);
+    var mMaxY = Math.max(a.y, b.y);
+    var hits = [];
+    for (var i = 0; i < state.strokes.length; i++) {
+      var stroke = state.strokes[i];
+      var pad = Math.max(2, stroke.width * 0.5);
+      var bbox = getAnyStrokeBBox(stroke);
+      if (
+        bbox.maxX + pad >= mMinX &&
+        bbox.minX - pad <= mMaxX &&
+        bbox.maxY + pad >= mMinY &&
+        bbox.minY - pad <= mMaxY
+      ) {
+        hits.push(i);
+      }
+    }
+    return hits;
+  }
+
+  function mergeUniqueSorted(a, b) {
+    var map = {};
+    var out = [];
+    var i;
+    for (i = 0; i < a.length; i++) {
+      if (!map[a[i]]) {
+        map[a[i]] = true;
+        out.push(a[i]);
+      }
+    }
+    for (i = 0; i < b.length; i++) {
+      if (!map[b[i]]) {
+        map[b[i]] = true;
+        out.push(b[i]);
+      }
+    }
+    out.sort(function (x, y) {
+      return x - y;
+    });
+    return out;
+  }
+
+  function updateSelectCursorClass(pt) {
+    if (!canvasLayer) {
+      return;
+    }
+    if (state.mode !== 'draw' || state.tool !== 'select') {
+      canvasLayer.classList.remove('mdo-select-move');
+      canvasLayer.classList.remove('mdo-select-dragging');
+      return;
+    }
+    if (selectMode === 'drag' && selectDidMove) {
+      canvasLayer.classList.add('mdo-select-dragging');
+      canvasLayer.classList.remove('mdo-select-move');
+      return;
+    }
+    canvasLayer.classList.remove('mdo-select-dragging');
+    var canMove = false;
+    if (pt) {
+      var selBBox = getSelectionBBox(selectedIndices, 0, 0);
+      if ((selBBox && isPointInBBox(pt, selBBox, 6)) || hitTestStrokeAtPoint(pt) !== -1) {
+        canMove = true;
+      }
+    }
+    canvasLayer.classList.toggle('mdo-select-move', canMove);
+  }
+
+  function applyTranslationToSelection(dx, dy) {
+    var nextStrokes = [];
+    for (var i = 0; i < state.strokes.length; i++) {
+      if (isIndexSelected(i)) {
+        nextStrokes.push(cloneStrokeTranslated(state.strokes[i], dx, dy));
+      } else {
+        nextStrokes.push(state.strokes[i]);
+      }
+    }
+    state.strokes = nextStrokes;
+  }
+
+  function deleteSelectedStrokes() {
+    if (selectedIndices.length === 0) {
+      return;
+    }
+    pushUndoSnapshot(state.strokes.slice());
+    var nextStrokes = [];
+    for (var i = 0; i < state.strokes.length; i++) {
+      if (!isIndexSelected(i)) {
+        nextStrokes.push(state.strokes[i]);
+      }
+    }
+    state.strokes = nextStrokes;
+    clearSelection();
+    renderStaticCanvas();
+    renderLiveCanvas();
+    updateUI();
+    scheduleSaveStrokes();
+  }
+
+  function nudgeSelectedStrokes(dx, dy) {
+    if (selectedIndices.length === 0) {
+      return;
+    }
+    pushUndoSnapshot(state.strokes.slice());
+    applyTranslationToSelection(dx, dy);
+    renderStaticCanvas();
+    renderLiveCanvas();
+    updateUI();
+    scheduleSaveStrokes();
   }
 
   function eraseAlongSegment(segStart, segEnd) {
@@ -1317,6 +1638,29 @@
   }
 
   function cancelOrCommitInFlightInteraction() {
+    if (selectMode === 'drag') {
+      if (
+        selectDidMove &&
+        (Math.abs(selectDragDx) > 0.5 || Math.abs(selectDragDy) > 0.5)
+      ) {
+        pushUndoSnapshot(state.strokes.slice());
+        applyTranslationToSelection(selectDragDx, selectDragDy);
+        scheduleSaveStrokes();
+      }
+      selectMode = null;
+      selectStartPt = null;
+      selectDragDx = 0;
+      selectDragDy = 0;
+      selectDidMove = false;
+      renderStaticCanvas();
+      renderLiveCanvas();
+    } else if (selectMode === 'marquee') {
+      selectMode = null;
+      selectStartPt = null;
+      selectCurrentPt = null;
+      selectMarqueeBase = [];
+      renderLiveCanvas();
+    }
     if (activeStroke) {
       var committed = normalizeCommittedStroke(activeStroke);
       if (committed) {
@@ -1374,6 +1718,56 @@
       }
     } else {
       hoverPt = null;
+    }
+
+    if (state.tool === 'select') {
+      var selBBox = getSelectionBBox(selectedIndices, 0, 0);
+      if (!e.shiftKey && selBBox && isPointInBBox(pt, selBBox, 6)) {
+        selectMode = 'drag';
+        selectStartPt = pt;
+        selectDragDx = 0;
+        selectDragDy = 0;
+        selectDidMove = false;
+      } else {
+        var hitIdx = hitTestStrokeAtPoint(pt);
+        if (hitIdx !== -1) {
+          if (e.shiftKey) {
+            if (isIndexSelected(hitIdx)) {
+              selectedIndices = selectedIndices.filter(function (idx) {
+                return idx !== hitIdx;
+              });
+              selectMode = null;
+            } else {
+              selectedIndices = mergeUniqueSorted(selectedIndices, [hitIdx]);
+              selectMode = 'drag';
+              selectStartPt = pt;
+              selectDragDx = 0;
+              selectDragDy = 0;
+              selectDidMove = false;
+            }
+          } else {
+            if (!isIndexSelected(hitIdx)) {
+              selectedIndices = [hitIdx];
+            }
+            selectMode = 'drag';
+            selectStartPt = pt;
+            selectDragDx = 0;
+            selectDragDy = 0;
+            selectDidMove = false;
+          }
+        } else {
+          if (!e.shiftKey) {
+            selectedIndices = [];
+          }
+          selectMode = 'marquee';
+          selectStartPt = pt;
+          selectCurrentPt = pt;
+          selectMarqueeBase = selectedIndices.slice();
+        }
+      }
+      updateSelectCursorClass(pt);
+      renderLiveCanvas();
+      return;
     }
 
     if (state.tool === 'eraser') {
@@ -1437,12 +1831,43 @@
         if (canvasLayer) {
           canvasLayer.classList.remove('mdo-pointer-outside');
         }
+        if (state.tool === 'select') {
+          updateSelectCursorClass(hoverPt);
+        }
         renderLiveCanvas();
       }
       return;
     }
 
     if (e.pointerId !== activePointerId) {
+      return;
+    }
+
+    if (state.tool === 'select') {
+      var sPt = getCanvasPoint(e);
+      if (e.pointerType !== 'touch') {
+        hoverPt = sPt;
+      }
+      if (selectMode === 'drag' && selectStartPt) {
+        var dx = sPt.x - selectStartPt.x;
+        var dy = sPt.y - selectStartPt.y;
+        var wasMoving = selectDidMove;
+        if (!selectDidMove && Math.sqrt(dx * dx + dy * dy) >= 2) {
+          selectDidMove = true;
+          updateSelectCursorClass(sPt);
+        }
+        selectDragDx = dx;
+        selectDragDy = dy;
+        if (!wasMoving && selectDidMove) {
+          renderStaticCanvas();
+        }
+        renderLiveCanvas();
+      } else if (selectMode === 'marquee' && selectStartPt) {
+        selectCurrentPt = sPt;
+        var hits = getStrokesInMarquee(selectStartPt, selectCurrentPt);
+        selectedIndices = mergeUniqueSorted(selectMarqueeBase, hits);
+        renderLiveCanvas();
+      }
       return;
     }
 
@@ -1575,6 +2000,49 @@
       } else {
         hoverPt = endPt;
       }
+    }
+
+    if (state.tool === 'select') {
+      if (selectMode === 'drag') {
+        if (
+          !isCancel &&
+          selectDidMove &&
+          (Math.abs(selectDragDx) > 0.5 || Math.abs(selectDragDy) > 0.5)
+        ) {
+          pushUndoSnapshot(state.strokes.slice());
+          applyTranslationToSelection(selectDragDx, selectDragDy);
+          scheduleSaveStrokes();
+        }
+        selectMode = null;
+        selectDidMove = false;
+        selectDragDx = 0;
+        selectDragDy = 0;
+        selectStartPt = null;
+        activePointerId = null;
+        renderStaticCanvas();
+        renderLiveCanvas();
+        updateUI();
+        updateSelectCursorClass(hoverPt);
+        return;
+      }
+      if (selectMode === 'marquee') {
+        if (isCancel) {
+          selectedIndices = selectMarqueeBase.slice();
+        }
+        selectMode = null;
+        selectStartPt = null;
+        selectCurrentPt = null;
+        selectMarqueeBase = [];
+        activePointerId = null;
+        renderLiveCanvas();
+        updateUI();
+        updateSelectCursorClass(hoverPt);
+        return;
+      }
+      activePointerId = null;
+      renderLiveCanvas();
+      updateSelectCursorClass(hoverPt);
+      return;
     }
 
     if (state.tool === 'eraser') {
@@ -1959,7 +2427,9 @@
     state.undoStack = [];
     state.redoStack = [];
     state.strokes = state.autoSave ? loadDocStrokesForKey(currentDocKey) : [];
+    clearSelection();
     renderStaticCanvas();
+    renderLiveCanvas();
     updateUI();
   }
 
@@ -2041,7 +2511,9 @@
         }
         pushUndoSnapshot(state.strokes.slice());
         state.strokes = imported;
+        clearSelection();
         renderStaticCanvas();
+        renderLiveCanvas();
         updateUI();
         scheduleSaveStrokes();
         showToast(msg().toastJsonImported.replace('{0}', String(imported.length)));
@@ -2840,6 +3312,11 @@
     var t = msg();
     var isDraw = state.mode === 'draw';
     canvasLayer.classList.toggle('mdo-draw-mode', isDraw);
+    canvasLayer.classList.toggle('mdo-tool-select', state.tool === 'select');
+    if (!isDraw || state.tool !== 'select') {
+      canvasLayer.classList.remove('mdo-select-move');
+      canvasLayer.classList.remove('mdo-select-dragging');
+    }
 
     toolbar.classList.toggle('mdo-collapsed', state.collapsed);
     toolbar.classList.toggle('mdo-draw-active', isDraw);
@@ -2876,7 +3353,7 @@
     for (var cVal in colorButtons) {
       if (Object.prototype.hasOwnProperty.call(colorButtons, cVal)) {
         var cBtn = colorButtons[cVal];
-        var cActive = cVal === activeColor && state.tool !== 'eraser';
+        var cActive = cVal === activeColor && state.tool !== 'eraser' && state.tool !== 'select';
         cBtn.classList.toggle('mdo-active', cActive);
         cBtn.setAttribute('aria-pressed', String(cActive));
       }
@@ -3215,12 +3692,20 @@
       return;
     }
 
-    // Escape: Close Popover or Return to Browse Mode
+    // Escape: Close Popover, Clear Selection, or Return to Browse Mode
     if (e.key === 'Escape') {
       if (state.popoverOpen) {
         e.preventDefault();
         e.stopPropagation();
         closePopover();
+        return;
+      }
+      if (state.mode === 'draw' && state.tool === 'select' && selectedIndices.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearSelection();
+        renderLiveCanvas();
+        updateUI();
         return;
       }
       if (state.mode === 'draw') {
@@ -3231,13 +3716,74 @@
       }
     }
 
-    // Undo / Redo (Ctrl/Cmd + Z, Ctrl/Cmd + Y, Ctrl/Cmd + Shift + Z)
-    var mod = e.ctrlKey || e.metaKey;
-    if (!mod || e.altKey || isEditableTarget(e.target)) {
+    if (isEditableTarget(e.target)) {
       return;
     }
 
     var keyLower = e.key ? e.key.toLowerCase() : '';
+    var mod = e.ctrlKey || e.metaKey;
+
+    if (!mod && !e.altKey) {
+      if (state.mode === 'draw' && keyLower === 'v') {
+        e.preventDefault();
+        e.stopPropagation();
+        setTool('select');
+        return;
+      }
+      if (state.mode === 'draw' && state.tool === 'select' && selectedIndices.length > 0) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteSelectedStrokes();
+          return;
+        }
+        var step = e.shiftKey ? 10 : 1;
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          nudgeSelectedStrokes(0, -step);
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          nudgeSelectedStrokes(0, step);
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          e.stopPropagation();
+          nudgeSelectedStrokes(-step, 0);
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          nudgeSelectedStrokes(step, 0);
+          return;
+        }
+      }
+      return;
+    }
+
+    // Undo / Redo / Select All
+    if (!mod || e.altKey) {
+      return;
+    }
+
+    if (state.mode === 'draw' && state.tool === 'select' && keyLower === 'a' && state.strokes.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      var all = [];
+      for (var ai = 0; ai < state.strokes.length; ai++) {
+        all.push(ai);
+      }
+      selectedIndices = all;
+      updateSelectCursorClass(hoverPt);
+      renderLiveCanvas();
+      return;
+    }
+
     if (keyLower === 'z' && !e.shiftKey) {
       if (state.undoStack.length > 0) {
         e.preventDefault();
