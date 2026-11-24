@@ -46,6 +46,14 @@
   cursor: grabbing;
 }
 
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-select.mdo-select-nwse #mdo-live-canvas {
+  cursor: nwse-resize;
+}
+
+#mdo-canvas-layer.mdo-draw-mode.mdo-tool-select.mdo-select-nesw #mdo-live-canvas {
+  cursor: nesw-resize;
+}
+
 /* Floating Frosted-Glass Toolbar */
 #mdo-toolbar {
   position: fixed;

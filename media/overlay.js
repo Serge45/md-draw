@@ -54,7 +54,7 @@
       collapseToolbar: 'Collapse toolbar',
       expandToolbar: 'Expand toolbar',
       tools: {
-        select: 'Select & Move (V · click or drag to select, drag to move, Del to delete)',
+        select: 'Select, Move & Resize (V · drag corners to resize, click colors/sizes to restyle, Del to delete)',
         pen: 'Pen (hold Shift for straight line)',
         highlighter: 'Highlighter (hold Shift for straight line)',
         arrow: 'Arrow (hold Shift for 15° snap)',
@@ -111,7 +111,7 @@
       collapseToolbar: '收合標註工具列',
       expandToolbar: '展開標註工具列',
       tools: {
-        select: '選取與移動 (V · 點擊或框選，拖曳移動，Delete 刪除)',
+        select: '選取、移動與縮放 (V · 拖曳四角縮放，點色盤/粗細改樣式，Delete 刪除)',
         pen: '畫筆 (Pen · 按住 Shift 可拉直線)',
         highlighter: '螢光筆 (Highlighter · 按住 Shift 可拉直線)',
         arrow: '箭頭 (Arrow · 按住 Shift 鎖定 15°)',
@@ -237,6 +237,11 @@
   var selectDragDx = 0;
   var selectDragDy = 0;
   var selectDidMove = false;
+  var selectResizeHandle = null; // null | 'nw' | 'ne' | 'se' | 'sw'
+  var selectResizeOrigBBox = null;
+  var selectResizeAnchor = null;
+  var selectResizeScaleX = 1;
+  var selectResizeScaleY = 1;
 
   var cssWidth = 0;
   var cssHeight = 0;
@@ -572,6 +577,28 @@
   }
 
   function selectColor(colorValue) {
+    if (state.tool === 'select' && selectedIndices.length > 0) {
+      var changedColor = false;
+      var nextStrokes = [];
+      for (var i = 0; i < state.strokes.length; i++) {
+        if (isIndexSelected(i) && state.strokes[i].color !== colorValue) {
+          changedColor = true;
+          nextStrokes.push(cloneStrokeStyled(state.strokes[i], colorValue, null));
+        } else {
+          nextStrokes.push(state.strokes[i]);
+        }
+      }
+      if (changedColor) {
+        pushUndoSnapshot(state.strokes.slice());
+        state.strokes = nextStrokes;
+        renderStaticCanvas();
+        scheduleSaveStrokes();
+      }
+      updateUI();
+      renderLiveCanvas();
+      return;
+    }
+
     if (state.tool === 'highlighter') {
       state.toolColors.highlighter = colorValue;
     } else if (state.tool === 'laser') {
@@ -592,6 +619,31 @@
 
   function selectSize(index) {
     state.sizeIndex = index;
+    if (state.tool === 'select' && selectedIndices.length > 0) {
+      var changedSize = false;
+      var nextStrokes = [];
+      for (var i = 0; i < state.strokes.length; i++) {
+        var stroke = state.strokes[i];
+        if (isIndexSelected(i)) {
+          var widths = SIZE_MAP[stroke.tool] || SIZE_MAP.pen;
+          var targetW = widths[index] !== undefined ? widths[index] : widths[1];
+          if (Math.abs(stroke.width - targetW) > 0.05) {
+            changedSize = true;
+            nextStrokes.push(cloneStrokeStyled(stroke, null, targetW));
+          } else {
+            nextStrokes.push(stroke);
+          }
+        } else {
+          nextStrokes.push(stroke);
+        }
+      }
+      if (changedSize) {
+        pushUndoSnapshot(state.strokes.slice());
+        state.strokes = nextStrokes;
+        renderStaticCanvas();
+        scheduleSaveStrokes();
+      }
+    }
     updateUI();
     renderLiveCanvas();
   }
@@ -949,9 +1001,14 @@
     if (state.mode !== 'draw' || state.tool !== 'select') {
       return;
     }
-    var dx = selectDidMove ? selectDragDx : 0;
-    var dy = selectDidMove ? selectDragDy : 0;
-    var bbox = getSelectionBBox(selectedIndices, dx, dy);
+    var bbox = null;
+    if (selectMode === 'resize' && selectDidMove) {
+      bbox = getActiveResizedBBox();
+    } else {
+      var dx = selectDidMove ? selectDragDx : 0;
+      var dy = selectDidMove ? selectDragDy : 0;
+      bbox = getSelectionBBox(selectedIndices, dx, dy);
+    }
     if (bbox) {
       var pad = 6;
       var x = bbox.minX - pad;
@@ -967,13 +1024,8 @@
       ctx.strokeRect(x, y, w, h);
       ctx.setLineDash([]);
 
-      var hs = 6;
-      var corners = [
-        { x: x, y: y },
-        { x: x + w, y: y },
-        { x: x + w, y: y + h },
-        { x: x, y: y + h }
-      ];
+      var hs = 8;
+      var corners = getSelectionHandles(bbox);
       ctx.fillStyle = '#FFFFFF';
       for (var c = 0; c < corners.length; c++) {
         ctx.fillRect(corners[c].x - hs / 2, corners[c].y - hs / 2, hs, hs);
@@ -1006,7 +1058,7 @@
     staticCtx.clearRect(0, 0, staticCanvas.width, staticCanvas.height);
     staticCtx.restore();
 
-    var hideSelected = selectMode === 'drag' && selectDidMove;
+    var hideSelected = (selectMode === 'drag' || selectMode === 'resize') && selectDidMove;
     for (var i = 0; i < state.strokes.length; i++) {
       if (hideSelected && isIndexSelected(i)) {
         continue;
@@ -1026,7 +1078,23 @@
     liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
     liveCtx.restore();
 
-    if (selectMode === 'drag' && selectDidMove && selectedIndices.length > 0) {
+    if (selectMode === 'resize' && selectDidMove && selectResizeAnchor && selectedIndices.length > 0) {
+      for (var r = 0; r < selectedIndices.length; r++) {
+        var rIdx = selectedIndices[r];
+        if (state.strokes[rIdx]) {
+          drawCommittedStroke(
+            liveCtx,
+            cloneStrokeScaled(
+              state.strokes[rIdx],
+              selectResizeAnchor.x,
+              selectResizeAnchor.y,
+              selectResizeScaleX,
+              selectResizeScaleY
+            )
+          );
+        }
+      }
+    } else if (selectMode === 'drag' && selectDidMove && selectedIndices.length > 0) {
       liveCtx.save();
       liveCtx.translate(selectDragDx, selectDragDy);
       for (var s = 0; s < selectedIndices.length; s++) {
@@ -1192,9 +1260,16 @@
     selectDragDx = 0;
     selectDragDy = 0;
     selectDidMove = false;
+    selectResizeHandle = null;
+    selectResizeOrigBBox = null;
+    selectResizeAnchor = null;
+    selectResizeScaleX = 1;
+    selectResizeScaleY = 1;
     if (canvasLayer) {
       canvasLayer.classList.remove('mdo-select-move');
       canvasLayer.classList.remove('mdo-select-dragging');
+      canvasLayer.classList.remove('mdo-select-nwse');
+      canvasLayer.classList.remove('mdo-select-nesw');
     }
   }
 
@@ -1224,6 +1299,219 @@
       start: { x: stroke.start.x + dx, y: stroke.start.y + dy },
       end: { x: stroke.end.x + dx, y: stroke.end.y + dy }
     };
+  }
+
+  function cloneStrokeScaled(stroke, anchorX, anchorY, sx, sy) {
+    var kind = stroke.kind || 'freehand';
+    if (kind === 'freehand') {
+      var pts = [];
+      var srcPts = stroke.points || [];
+      for (var i = 0; i < srcPts.length; i++) {
+        pts.push({
+          x: anchorX + (srcPts[i].x - anchorX) * sx,
+          y: anchorY + (srcPts[i].y - anchorY) * sy
+        });
+      }
+      return {
+        kind: 'freehand',
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        opacity: stroke.opacity,
+        points: pts
+      };
+    }
+    return {
+      kind: kind,
+      tool: stroke.tool,
+      color: stroke.color,
+      width: stroke.width,
+      opacity: stroke.opacity,
+      start: {
+        x: anchorX + (stroke.start.x - anchorX) * sx,
+        y: anchorY + (stroke.start.y - anchorY) * sy
+      },
+      end: {
+        x: anchorX + (stroke.end.x - anchorX) * sx,
+        y: anchorY + (stroke.end.y - anchorY) * sy
+      }
+    };
+  }
+
+  function cloneStrokeStyled(stroke, nextColor, nextWidth) {
+    var kind = stroke.kind || 'freehand';
+    var color = nextColor || stroke.color;
+    var width = nextWidth !== null && nextWidth !== undefined ? nextWidth : stroke.width;
+    if (kind === 'freehand') {
+      var pts = [];
+      var srcPts = stroke.points || [];
+      for (var i = 0; i < srcPts.length; i++) {
+        pts.push({ x: srcPts[i].x, y: srcPts[i].y });
+      }
+      return {
+        kind: 'freehand',
+        tool: stroke.tool,
+        color: color,
+        width: width,
+        opacity: stroke.opacity,
+        points: pts
+      };
+    }
+    return {
+      kind: kind,
+      tool: stroke.tool,
+      color: color,
+      width: width,
+      opacity: stroke.opacity,
+      start: { x: stroke.start.x, y: stroke.start.y },
+      end: { x: stroke.end.x, y: stroke.end.y }
+    };
+  }
+
+  function getRawSelectionBBox(indices) {
+    if (!indices || indices.length === 0) {
+      return null;
+    }
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    var found = false;
+    for (var i = 0; i < indices.length; i++) {
+      var stroke = state.strokes[indices[i]];
+      if (!stroke) {
+        continue;
+      }
+      var b = getAnyStrokeBBox(stroke);
+      if (!isFinite(b.minX) || !isFinite(b.minY) || !isFinite(b.maxX) || !isFinite(b.maxY)) {
+        continue;
+      }
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+      found = true;
+    }
+    return found ? { minX: minX, minY: minY, maxX: maxX, maxY: maxY } : null;
+  }
+
+  function getSelectionHandles(bbox) {
+    var pad = 6;
+    var x = bbox.minX - pad;
+    var y = bbox.minY - pad;
+    var w = bbox.maxX - bbox.minX + pad * 2;
+    var h = bbox.maxY - bbox.minY + pad * 2;
+    return [
+      { id: 'nw', x: x, y: y },
+      { id: 'ne', x: x + w, y: y },
+      { id: 'se', x: x + w, y: y + h },
+      { id: 'sw', x: x, y: y + h }
+    ];
+  }
+
+  function hitTestSelectionHandle(pt, bbox) {
+    if (!pt || !bbox) {
+      return null;
+    }
+    var handles = getSelectionHandles(bbox);
+    for (var i = 0; i < handles.length; i++) {
+      if (Math.abs(pt.x - handles[i].x) <= 9 && Math.abs(pt.y - handles[i].y) <= 9) {
+        return handles[i].id;
+      }
+    }
+    return null;
+  }
+
+  function getSelectionUniformColor() {
+    if (selectedIndices.length === 0) {
+      return null;
+    }
+    var first = state.strokes[selectedIndices[0]];
+    if (!first) {
+      return null;
+    }
+    var color = first.color;
+    for (var i = 1; i < selectedIndices.length; i++) {
+      var s = state.strokes[selectedIndices[i]];
+      if (!s || s.color !== color) {
+        return null;
+      }
+    }
+    return color;
+  }
+
+  function getSelectionUniformSizeIndex() {
+    if (selectedIndices.length === 0) {
+      return -1;
+    }
+    var matchedIdx = -1;
+    for (var i = 0; i < selectedIndices.length; i++) {
+      var s = state.strokes[selectedIndices[i]];
+      if (!s) {
+        return -1;
+      }
+      var widths = SIZE_MAP[s.tool] || SIZE_MAP.pen;
+      var found = -1;
+      for (var w = 0; w < widths.length; w++) {
+        if (Math.abs(s.width - widths[w]) <= 0.05) {
+          found = w;
+          break;
+        }
+      }
+      if (found === -1) {
+        return -1;
+      }
+      if (matchedIdx === -1) {
+        matchedIdx = found;
+      } else if (matchedIdx !== found) {
+        return -1;
+      }
+    }
+    return matchedIdx;
+  }
+
+  function applyScaleToSelection(anchorX, anchorY, sx, sy) {
+    var nextStrokes = [];
+    for (var i = 0; i < state.strokes.length; i++) {
+      if (isIndexSelected(i)) {
+        nextStrokes.push(cloneStrokeScaled(state.strokes[i], anchorX, anchorY, sx, sy));
+      } else {
+        nextStrokes.push(state.strokes[i]);
+      }
+    }
+    state.strokes = nextStrokes;
+  }
+
+  function getActiveResizedBBox() {
+    if (!selectResizeAnchor || selectedIndices.length === 0) {
+      return null;
+    }
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    var found = false;
+    for (var i = 0; i < selectedIndices.length; i++) {
+      var s = state.strokes[selectedIndices[i]];
+      if (!s) {
+        continue;
+      }
+      var scaled = cloneStrokeScaled(
+        s,
+        selectResizeAnchor.x,
+        selectResizeAnchor.y,
+        selectResizeScaleX,
+        selectResizeScaleY
+      );
+      var b = getAnyStrokeBBox(scaled);
+      var pad = Math.max(4, scaled.width * 0.5);
+      if (b.minX - pad < minX) minX = b.minX - pad;
+      if (b.minY - pad < minY) minY = b.minY - pad;
+      if (b.maxX + pad > maxX) maxX = b.maxX + pad;
+      if (b.maxY + pad > maxY) maxY = b.maxY + pad;
+      found = true;
+    }
+    return found ? { minX: minX, minY: minY, maxX: maxX, maxY: maxY } : null;
   }
 
   function getSelectionBBox(indices, dx, dy) {
@@ -1343,22 +1631,44 @@
     if (state.mode !== 'draw' || state.tool !== 'select') {
       canvasLayer.classList.remove('mdo-select-move');
       canvasLayer.classList.remove('mdo-select-dragging');
+      canvasLayer.classList.remove('mdo-select-nwse');
+      canvasLayer.classList.remove('mdo-select-nesw');
+      return;
+    }
+    if (selectMode === 'resize' && selectResizeHandle) {
+      canvasLayer.classList.remove('mdo-select-move');
+      canvasLayer.classList.remove('mdo-select-dragging');
+      var isNwse = selectResizeHandle === 'nw' || selectResizeHandle === 'se';
+      canvasLayer.classList.toggle('mdo-select-nwse', isNwse);
+      canvasLayer.classList.toggle('mdo-select-nesw', !isNwse);
       return;
     }
     if (selectMode === 'drag' && selectDidMove) {
       canvasLayer.classList.add('mdo-select-dragging');
       canvasLayer.classList.remove('mdo-select-move');
+      canvasLayer.classList.remove('mdo-select-nwse');
+      canvasLayer.classList.remove('mdo-select-nesw');
       return;
     }
     canvasLayer.classList.remove('mdo-select-dragging');
-    var canMove = false;
+    canvasLayer.classList.remove('mdo-select-nwse');
+    canvasLayer.classList.remove('mdo-select-nesw');
     if (pt) {
       var selBBox = getSelectionBBox(selectedIndices, 0, 0);
+      var handle = hitTestSelectionHandle(pt, selBBox);
+      if (handle) {
+        canvasLayer.classList.remove('mdo-select-move');
+        var hoverNwse = handle === 'nw' || handle === 'se';
+        canvasLayer.classList.toggle('mdo-select-nwse', hoverNwse);
+        canvasLayer.classList.toggle('mdo-select-nesw', !hoverNwse);
+        return;
+      }
       if ((selBBox && isPointInBBox(pt, selBBox, 6)) || hitTestStrokeAtPoint(pt) !== -1) {
-        canMove = true;
+        canvasLayer.classList.add('mdo-select-move');
+        return;
       }
     }
-    canvasLayer.classList.toggle('mdo-select-move', canMove);
+    canvasLayer.classList.remove('mdo-select-move');
   }
 
   function applyTranslationToSelection(dx, dy) {
@@ -1660,6 +1970,30 @@
       selectCurrentPt = null;
       selectMarqueeBase = [];
       renderLiveCanvas();
+    } else if (selectMode === 'resize') {
+      if (
+        selectDidMove &&
+        selectResizeAnchor &&
+        (Math.abs(selectResizeScaleX - 1) > 0.005 || Math.abs(selectResizeScaleY - 1) > 0.005)
+      ) {
+        pushUndoSnapshot(state.strokes.slice());
+        applyScaleToSelection(
+          selectResizeAnchor.x,
+          selectResizeAnchor.y,
+          selectResizeScaleX,
+          selectResizeScaleY
+        );
+        scheduleSaveStrokes();
+      }
+      selectMode = null;
+      selectDidMove = false;
+      selectResizeHandle = null;
+      selectResizeOrigBBox = null;
+      selectResizeAnchor = null;
+      selectResizeScaleX = 1;
+      selectResizeScaleY = 1;
+      renderStaticCanvas();
+      renderLiveCanvas();
     }
     if (activeStroke) {
       var committed = normalizeCommittedStroke(activeStroke);
@@ -1722,6 +2056,30 @@
 
     if (state.tool === 'select') {
       var selBBox = getSelectionBBox(selectedIndices, 0, 0);
+      var hitHandle = !e.shiftKey && selBBox ? hitTestSelectionHandle(pt, selBBox) : null;
+      if (hitHandle) {
+        var rawBBox = getRawSelectionBBox(selectedIndices);
+        if (rawBBox) {
+          selectMode = 'resize';
+          selectResizeHandle = hitHandle;
+          selectResizeOrigBBox = rawBBox;
+          selectResizeScaleX = 1;
+          selectResizeScaleY = 1;
+          selectDidMove = false;
+          if (hitHandle === 'nw') {
+            selectResizeAnchor = { x: rawBBox.maxX, y: rawBBox.maxY };
+          } else if (hitHandle === 'ne') {
+            selectResizeAnchor = { x: rawBBox.minX, y: rawBBox.maxY };
+          } else if (hitHandle === 'se') {
+            selectResizeAnchor = { x: rawBBox.minX, y: rawBBox.minY };
+          } else {
+            selectResizeAnchor = { x: rawBBox.maxX, y: rawBBox.minY };
+          }
+          updateSelectCursorClass(pt);
+          renderLiveCanvas();
+          return;
+        }
+      }
       if (!e.shiftKey && selBBox && isPointInBBox(pt, selBBox, 6)) {
         selectMode = 'drag';
         selectStartPt = pt;
@@ -1866,6 +2224,42 @@
         selectCurrentPt = sPt;
         var hits = getStrokesInMarquee(selectStartPt, selectCurrentPt);
         selectedIndices = mergeUniqueSorted(selectMarqueeBase, hits);
+        renderLiveCanvas();
+      } else if (selectMode === 'resize' && selectResizeOrigBBox && selectResizeAnchor) {
+        var origW = selectResizeOrigBBox.maxX - selectResizeOrigBBox.minX;
+        var origH = selectResizeOrigBBox.maxY - selectResizeOrigBBox.minY;
+        var newW = origW;
+        var newH = origH;
+        if (selectResizeHandle === 'nw') {
+          newW = Math.max(8, selectResizeAnchor.x - sPt.x);
+          newH = Math.max(8, selectResizeAnchor.y - sPt.y);
+        } else if (selectResizeHandle === 'ne') {
+          newW = Math.max(8, sPt.x - selectResizeAnchor.x);
+          newH = Math.max(8, selectResizeAnchor.y - sPt.y);
+        } else if (selectResizeHandle === 'se') {
+          newW = Math.max(8, sPt.x - selectResizeAnchor.x);
+          newH = Math.max(8, sPt.y - selectResizeAnchor.y);
+        } else if (selectResizeHandle === 'sw') {
+          newW = Math.max(8, selectResizeAnchor.x - sPt.x);
+          newH = Math.max(8, sPt.y - selectResizeAnchor.y);
+        }
+        var sx = origW >= 1 ? newW / origW : 1;
+        var sy = origH >= 1 ? newH / origH : 1;
+        if (e.shiftKey && origW >= 1 && origH >= 1) {
+          var u = Math.max(sx, sy);
+          sx = u;
+          sy = u;
+        }
+        var wasResizing = selectDidMove;
+        if (!selectDidMove && (Math.abs(sx - 1) > 0.005 || Math.abs(sy - 1) > 0.005)) {
+          selectDidMove = true;
+          updateSelectCursorClass(sPt);
+        }
+        selectResizeScaleX = sx;
+        selectResizeScaleY = sy;
+        if (!wasResizing && selectDidMove) {
+          renderStaticCanvas();
+        }
         renderLiveCanvas();
       }
       return;
@@ -2034,6 +2428,36 @@
         selectCurrentPt = null;
         selectMarqueeBase = [];
         activePointerId = null;
+        renderLiveCanvas();
+        updateUI();
+        updateSelectCursorClass(hoverPt);
+        return;
+      }
+      if (selectMode === 'resize') {
+        if (
+          !isCancel &&
+          selectDidMove &&
+          selectResizeAnchor &&
+          (Math.abs(selectResizeScaleX - 1) > 0.005 || Math.abs(selectResizeScaleY - 1) > 0.005)
+        ) {
+          pushUndoSnapshot(state.strokes.slice());
+          applyScaleToSelection(
+            selectResizeAnchor.x,
+            selectResizeAnchor.y,
+            selectResizeScaleX,
+            selectResizeScaleY
+          );
+          scheduleSaveStrokes();
+        }
+        selectMode = null;
+        selectDidMove = false;
+        selectResizeHandle = null;
+        selectResizeOrigBBox = null;
+        selectResizeAnchor = null;
+        selectResizeScaleX = 1;
+        selectResizeScaleY = 1;
+        activePointerId = null;
+        renderStaticCanvas();
         renderLiveCanvas();
         updateUI();
         updateSelectCursorClass(hoverPt);
@@ -3316,6 +3740,8 @@
     if (!isDraw || state.tool !== 'select') {
       canvasLayer.classList.remove('mdo-select-move');
       canvasLayer.classList.remove('mdo-select-dragging');
+      canvasLayer.classList.remove('mdo-select-nwse');
+      canvasLayer.classList.remove('mdo-select-nesw');
     }
 
     toolbar.classList.toggle('mdo-collapsed', state.collapsed);
@@ -3350,18 +3776,27 @@
     }
 
     var activeColor = getActiveColor();
+    var selColor = state.tool === 'select' && selectedIndices.length > 0 ? getSelectionUniformColor() : null;
     for (var cVal in colorButtons) {
       if (Object.prototype.hasOwnProperty.call(colorButtons, cVal)) {
         var cBtn = colorButtons[cVal];
-        var cActive = cVal === activeColor && state.tool !== 'eraser' && state.tool !== 'select';
+        var cActive =
+          state.tool === 'select'
+            ? selColor !== null && cVal === selColor
+            : cVal === activeColor && state.tool !== 'eraser';
         cBtn.classList.toggle('mdo-active', cActive);
         cBtn.setAttribute('aria-pressed', String(cActive));
       }
     }
 
+    var selSizeIdx =
+      state.tool === 'select' && selectedIndices.length > 0 ? getSelectionUniformSizeIndex() : -1;
     for (var i = 0; i < sizeButtons.length; i++) {
       var sBtn = sizeButtons[i];
-      var sActive = i === state.sizeIndex;
+      var sActive =
+        state.tool === 'select' && selectedIndices.length > 0
+          ? selSizeIdx !== -1 && i === selSizeIdx
+          : i === state.sizeIndex;
       sBtn.classList.toggle('mdo-active', sActive);
       sBtn.setAttribute('aria-pressed', String(sActive));
     }
