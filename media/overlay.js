@@ -21,6 +21,7 @@
   var STORAGE_AUTOSAVE_KEY = 'mdo.autosave';
   var MAX_STORED_DOCS = 30;
   var SAVE_DEBOUNCE_MS = 280;
+  var ANCHOR_BLOCK_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, pre, table, blockquote, li, img, figure, hr';
 
   var PALETTE = [
     { id: 'red', value: '#EF4444', className: 'mdo-color-red' },
@@ -503,6 +504,7 @@
     }
     state.strokes = state.undoStack.pop();
     clearSelection();
+    reconcileStrokesToAnchors();
     renderStaticCanvas();
     renderLiveCanvas();
     updateUI();
@@ -514,11 +516,12 @@
       return;
     }
     state.undoStack.push(state.strokes.slice());
-    if (state.undoStack.length > MAX_HISTORY) {
-      state.undoStack.shift();
+    if (state.redoStack.length > MAX_HISTORY) {
+      state.redoStack.shift();
     }
     state.strokes = state.redoStack.pop();
     clearSelection();
+    reconcileStrokesToAnchors();
     renderStaticCanvas();
     renderLiveCanvas();
     updateUI();
@@ -1246,6 +1249,280 @@
     return getStrokeBBox(pts);
   }
 
+  // Block Anchoring Helpers
+  function hashTextShort(str) {
+    var norm = String(str || '').replace(/\s+/g, ' ').trim().slice(0, 64);
+    if (!norm) {
+      return '';
+    }
+    var hash = 0x811c9dc5;
+    for (var i = 0; i < norm.length; i++) {
+      hash ^= norm.charCodeAt(i);
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    return ('00000000' + hash.toString(16)).slice(-8);
+  }
+
+  function isOverlayDomNode(el) {
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      var id = cur.id;
+      if (
+        id === 'mdo-canvas-layer' ||
+        id === 'mdo-toolbar' ||
+        id === 'mdo-toast' ||
+        id === 'mdo-popover'
+      ) {
+        return true;
+      }
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+
+  function collectAnchorBlocks() {
+    if (!canvasLayer) {
+      return [];
+    }
+    var root = document.querySelector('.crossnote[data-for="preview"]') || document.body;
+    if (!root || !root.querySelectorAll) {
+      return [];
+    }
+    var layerRect = canvasLayer.getBoundingClientRect();
+    var nodes = root.querySelectorAll(ANCHOR_BLOCK_SELECTOR);
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (!el || isOverlayDomNode(el)) {
+        continue;
+      }
+      var rect = el.getBoundingClientRect();
+      if (rect.width <= 0 && rect.height <= 0) {
+        continue;
+      }
+      var tag = String(el.tagName || '').toLowerCase();
+      var textSrc =
+        tag === 'img'
+          ? el.getAttribute('alt') || el.getAttribute('src') || ''
+          : el.textContent || '';
+      out.push({
+        index: out.length,
+        tag: tag,
+        line: el.getAttribute('data-line') || '',
+        textHash: hashTextShort(textSrc),
+        left: rect.left - layerRect.left,
+        top: rect.top - layerRect.top,
+        right: rect.right - layerRect.left,
+        bottom: rect.bottom - layerRect.top,
+        width: rect.width,
+        height: rect.height
+      });
+    }
+    return out;
+  }
+
+  function cloneAnchor(anchor) {
+    if (!anchor || typeof anchor !== 'object') {
+      return null;
+    }
+    return {
+      line: anchor.line || '',
+      tag: anchor.tag || '',
+      index: typeof anchor.index === 'number' ? anchor.index : 0,
+      textHash: anchor.textHash || '',
+      refX: anchor.refX,
+      refY: anchor.refY,
+      refW: anchor.refW,
+      refH: anchor.refH
+    };
+  }
+
+  function computeAnchorForStroke(stroke, cachedBlocks) {
+    if (!stroke || !canvasLayer) {
+      return null;
+    }
+    var bbox = getAnyStrokeBBox(stroke);
+    if (!isFinite(bbox.minX) || !isFinite(bbox.minY)) {
+      return null;
+    }
+    var cx = (bbox.minX + bbox.maxX) * 0.5;
+    var cy = (bbox.minY + bbox.maxY) * 0.5;
+    var blocks = cachedBlocks || collectAnchorBlocks();
+    if (blocks.length === 0) {
+      return null;
+    }
+
+    var best = null;
+    var bestArea = Infinity;
+    var i;
+    for (i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (
+        cx >= b.left - 8 &&
+        cx <= b.right + 8 &&
+        cy >= b.top - 8 &&
+        cy <= b.bottom + 8
+      ) {
+        var area = Math.max(1, b.width * b.height);
+        if (area < bestArea) {
+          bestArea = area;
+          best = b;
+        }
+      }
+    }
+
+    if (!best) {
+      var bestDistSq = Infinity;
+      for (i = 0; i < blocks.length; i++) {
+        var blk = blocks[i];
+        var clampedX = Math.max(blk.left, Math.min(cx, blk.right));
+        var clampedY = Math.max(blk.top, Math.min(cy, blk.bottom));
+        var dx = cx - clampedX;
+        var dy = cy - clampedY;
+        var dSq = dx * dx + dy * dy;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          best = blk;
+        }
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+    return {
+      line: best.line,
+      tag: best.tag,
+      index: best.index,
+      textHash: best.textHash,
+      refX: round1(best.left),
+      refY: round1(best.top),
+      refW: round1(best.width),
+      refH: round1(best.height)
+    };
+  }
+
+  function resolveAnchorBlock(anchor, blocks) {
+    if (!anchor || !blocks || blocks.length === 0) {
+      return null;
+    }
+    var i;
+    var candidates = [];
+
+    // Tier 1: data-line + tag match
+    if (anchor.line) {
+      for (i = 0; i < blocks.length; i++) {
+        if (blocks[i].line === anchor.line && blocks[i].tag === anchor.tag) {
+          candidates.push(blocks[i]);
+        }
+      }
+      if (candidates.length === 1) {
+        return candidates[0];
+      }
+      if (candidates.length > 1) {
+        var bestCand = candidates[0];
+        var bestScore = Infinity;
+        for (i = 0; i < candidates.length; i++) {
+          var c = candidates[i];
+          var hashPenalty = anchor.textHash && c.textHash !== anchor.textHash ? 10000 : 0;
+          var score = hashPenalty + Math.abs(c.index - (anchor.index || 0));
+          if (score < bestScore) {
+            bestScore = score;
+            bestCand = c;
+          }
+        }
+        return bestCand;
+      }
+
+      // Tier 2: data-line match
+      for (i = 0; i < blocks.length; i++) {
+        if (blocks[i].line === anchor.line) {
+          return blocks[i];
+        }
+      }
+    }
+
+    // Tier 3: tag + textHash match
+    if (anchor.textHash) {
+      var hashMatches = [];
+      for (i = 0; i < blocks.length; i++) {
+        if (blocks[i].tag === anchor.tag && blocks[i].textHash === anchor.textHash) {
+          hashMatches.push(blocks[i]);
+        }
+      }
+      if (hashMatches.length > 0) {
+        var closest = hashMatches[0];
+        var minIdxDiff = Math.abs(closest.index - (anchor.index || 0));
+        for (i = 1; i < hashMatches.length; i++) {
+          var diff = Math.abs(hashMatches[i].index - (anchor.index || 0));
+          if (diff < minIdxDiff) {
+            minIdxDiff = diff;
+            closest = hashMatches[i];
+          }
+        }
+        return closest;
+      }
+    }
+
+    // Tier 4: index + tag fallback
+    if (
+      typeof anchor.index === 'number' &&
+      blocks[anchor.index] &&
+      blocks[anchor.index].tag === anchor.tag
+    ) {
+      return blocks[anchor.index];
+    }
+
+    return null;
+  }
+
+  function reconcileStrokesToAnchors() {
+    if (state.strokes.length === 0 || activePointerId !== null || !canvasLayer) {
+      return false;
+    }
+    var blocks = collectAnchorBlocks();
+    if (blocks.length === 0) {
+      return false;
+    }
+    var changed = false;
+    var nextStrokes = [];
+    for (var i = 0; i < state.strokes.length; i++) {
+      var stroke = state.strokes[i];
+      if (!stroke || !stroke.anchor) {
+        nextStrokes.push(stroke);
+        continue;
+      }
+      var block = resolveAnchorBlock(stroke.anchor, blocks);
+      if (!block) {
+        nextStrokes.push(stroke);
+        continue;
+      }
+      var dx = block.left - stroke.anchor.refX;
+      var dy = block.top - stroke.anchor.refY;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        var moved = cloneStrokeTranslated(stroke, dx, dy);
+        moved.anchor = {
+          line: block.line,
+          tag: block.tag,
+          index: block.index,
+          textHash: block.textHash,
+          refX: round1(block.left),
+          refY: round1(block.top),
+          refW: round1(block.width),
+          refH: round1(block.height)
+        };
+        nextStrokes.push(moved);
+        changed = true;
+      } else {
+        nextStrokes.push(stroke);
+      }
+    }
+    if (changed) {
+      state.strokes = nextStrokes;
+    }
+    return changed;
+  }
+
   // Selection & Move Helpers
   function isIndexSelected(idx) {
     return selectedIndices.indexOf(idx) !== -1;
@@ -1275,6 +1552,7 @@
 
   function cloneStrokeTranslated(stroke, dx, dy) {
     var kind = stroke.kind || 'freehand';
+    var anchor = cloneAnchor(stroke.anchor);
     if (kind === 'freehand') {
       var pts = [];
       var srcPts = stroke.points || [];
@@ -1287,7 +1565,8 @@
         color: stroke.color,
         width: stroke.width,
         opacity: stroke.opacity,
-        points: pts
+        points: pts,
+        anchor: anchor
       };
     }
     return {
@@ -1297,12 +1576,14 @@
       width: stroke.width,
       opacity: stroke.opacity,
       start: { x: stroke.start.x + dx, y: stroke.start.y + dy },
-      end: { x: stroke.end.x + dx, y: stroke.end.y + dy }
+      end: { x: stroke.end.x + dx, y: stroke.end.y + dy },
+      anchor: anchor
     };
   }
 
   function cloneStrokeScaled(stroke, anchorX, anchorY, sx, sy) {
     var kind = stroke.kind || 'freehand';
+    var anchor = cloneAnchor(stroke.anchor);
     if (kind === 'freehand') {
       var pts = [];
       var srcPts = stroke.points || [];
@@ -1318,7 +1599,8 @@
         color: stroke.color,
         width: stroke.width,
         opacity: stroke.opacity,
-        points: pts
+        points: pts,
+        anchor: anchor
       };
     }
     return {
@@ -1334,7 +1616,8 @@
       end: {
         x: anchorX + (stroke.end.x - anchorX) * sx,
         y: anchorY + (stroke.end.y - anchorY) * sy
-      }
+      },
+      anchor: anchor
     };
   }
 
@@ -1342,6 +1625,7 @@
     var kind = stroke.kind || 'freehand';
     var color = nextColor || stroke.color;
     var width = nextWidth !== null && nextWidth !== undefined ? nextWidth : stroke.width;
+    var anchor = cloneAnchor(stroke.anchor);
     if (kind === 'freehand') {
       var pts = [];
       var srcPts = stroke.points || [];
@@ -1354,7 +1638,8 @@
         color: color,
         width: width,
         opacity: stroke.opacity,
-        points: pts
+        points: pts,
+        anchor: anchor
       };
     }
     return {
@@ -1364,7 +1649,8 @@
       width: width,
       opacity: stroke.opacity,
       start: { x: stroke.start.x, y: stroke.start.y },
-      end: { x: stroke.end.x, y: stroke.end.y }
+      end: { x: stroke.end.x, y: stroke.end.y },
+      anchor: anchor
     };
   }
 
@@ -1471,10 +1757,13 @@
   }
 
   function applyScaleToSelection(anchorX, anchorY, sx, sy) {
+    var blocks = collectAnchorBlocks();
     var nextStrokes = [];
     for (var i = 0; i < state.strokes.length; i++) {
       if (isIndexSelected(i)) {
-        nextStrokes.push(cloneStrokeScaled(state.strokes[i], anchorX, anchorY, sx, sy));
+        var scaled = cloneStrokeScaled(state.strokes[i], anchorX, anchorY, sx, sy);
+        scaled.anchor = computeAnchorForStroke(scaled, blocks);
+        nextStrokes.push(scaled);
       } else {
         nextStrokes.push(state.strokes[i]);
       }
@@ -1672,10 +1961,13 @@
   }
 
   function applyTranslationToSelection(dx, dy) {
+    var blocks = collectAnchorBlocks();
     var nextStrokes = [];
     for (var i = 0; i < state.strokes.length; i++) {
       if (isIndexSelected(i)) {
-        nextStrokes.push(cloneStrokeTranslated(state.strokes[i], dx, dy));
+        var moved = cloneStrokeTranslated(state.strokes[i], dx, dy);
+        moved.anchor = computeAnchorForStroke(moved, blocks);
+        nextStrokes.push(moved);
       } else {
         nextStrokes.push(state.strokes[i]);
       }
@@ -1799,15 +2091,18 @@
         nextStrokes.push(stroke);
       } else {
         changed = true;
+        var cachedBlocks = runs.length > 0 ? collectAnchorBlocks() : null;
         for (var r = 0; r < runs.length; r++) {
-          nextStrokes.push({
+          var runStroke = {
             kind: 'freehand',
             tool: stroke.tool,
             color: stroke.color,
             width: stroke.width,
             opacity: stroke.opacity,
             points: runs[r]
-          });
+          };
+          runStroke.anchor = computeAnchorForStroke(runStroke, cachedBlocks);
+          nextStrokes.push(runStroke);
         }
       }
     }
@@ -1917,6 +2212,7 @@
       return null;
     }
     var kind = stroke.kind || 'freehand';
+    var normalized = null;
     if (kind === 'line' || kind === 'arrow' || kind === 'rect') {
       if (!stroke.start || !stroke.end) {
         return null;
@@ -1924,7 +2220,7 @@
       if ((kind === 'arrow' || kind === 'rect') && dist(stroke.start, stroke.end) < 3) {
         return null;
       }
-      return {
+      normalized = {
         kind: kind,
         tool: stroke.tool,
         color: stroke.color,
@@ -1933,18 +2229,21 @@
         start: { x: stroke.start.x, y: stroke.start.y },
         end: { x: stroke.end.x, y: stroke.end.y }
       };
+    } else {
+      if (!stroke.points || stroke.points.length === 0) {
+        return null;
+      }
+      normalized = {
+        kind: 'freehand',
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        opacity: stroke.opacity,
+        points: stroke.points
+      };
     }
-    if (!stroke.points || stroke.points.length === 0) {
-      return null;
-    }
-    return {
-      kind: 'freehand',
-      tool: stroke.tool,
-      color: stroke.color,
-      width: stroke.width,
-      opacity: stroke.opacity,
-      points: stroke.points
-    };
+    normalized.anchor = computeAnchorForStroke(normalized);
+    return normalized;
   }
 
   function cancelOrCommitInFlightInteraction() {
@@ -2577,6 +2876,11 @@
       Math.abs(nextDpr - effectiveDpr) > 0.001;
 
     if (!changed) {
+      if (reconcileStrokesToAnchors()) {
+        renderStaticCanvas();
+        renderLiveCanvas();
+        scheduleSaveStrokes();
+      }
       return;
     }
 
@@ -2595,8 +2899,12 @@
     staticCtx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
     liveCtx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
 
+    var movedOnResize = reconcileStrokesToAnchors();
     renderStaticCanvas();
     renderLiveCanvas();
+    if (movedOnResize) {
+      scheduleSaveStrokes();
+    }
   }
 
   function scheduleSyncSize() {
@@ -2650,15 +2958,35 @@
     return Math.round(num * 10) / 10;
   }
 
+  function compactAnchor(anchor) {
+    if (!anchor || typeof anchor !== 'object') {
+      return null;
+    }
+    if (typeof anchor.refX !== 'number' || typeof anchor.refY !== 'number') {
+      return null;
+    }
+    return {
+      line: String(anchor.line || ''),
+      tag: String(anchor.tag || ''),
+      index: typeof anchor.index === 'number' ? anchor.index : 0,
+      textHash: String(anchor.textHash || ''),
+      refX: round1(anchor.refX),
+      refY: round1(anchor.refY),
+      refW: typeof anchor.refW === 'number' ? round1(anchor.refW) : 0,
+      refH: typeof anchor.refH === 'number' ? round1(anchor.refH) : 0
+    };
+  }
+
   function compactStrokes(strokes) {
     var out = [];
     for (var i = 0; i < strokes.length; i++) {
       var s = strokes[i];
       if (!s) continue;
       var kind = s.kind || 'freehand';
+      var anchor = compactAnchor(s.anchor);
       if (kind === 'line' || kind === 'arrow' || kind === 'rect') {
         if (!s.start || !s.end) continue;
-        out.push({
+        var shapeItem = {
           kind: kind,
           tool: s.tool,
           color: s.color,
@@ -2666,20 +2994,28 @@
           opacity: round1(s.opacity * 100) / 100,
           start: { x: round1(s.start.x), y: round1(s.start.y) },
           end: { x: round1(s.end.x), y: round1(s.end.y) }
-        });
+        };
+        if (anchor) {
+          shapeItem.anchor = anchor;
+        }
+        out.push(shapeItem);
       } else if (s.points && s.points.length > 0) {
         var pts = [];
         for (var j = 0; j < s.points.length; j++) {
           pts.push({ x: round1(s.points[j].x), y: round1(s.points[j].y) });
         }
-        out.push({
+        var freeItem = {
           kind: 'freehand',
           tool: s.tool,
           color: s.color,
           width: round1(s.width),
           opacity: round1(s.opacity * 100) / 100,
           points: pts
-        });
+        };
+        if (anchor) {
+          freeItem.anchor = anchor;
+        }
+        out.push(freeItem);
       }
     }
     return out;
@@ -2687,6 +3023,33 @@
 
   function isValidPoint(pt) {
     return Boolean(pt && typeof pt.x === 'number' && typeof pt.y === 'number' && isFinite(pt.x) && isFinite(pt.y));
+  }
+
+  function sanitizeAnchor(raw) {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    if (
+      typeof raw.refX !== 'number' ||
+      !isFinite(raw.refX) ||
+      typeof raw.refY !== 'number' ||
+      !isFinite(raw.refY)
+    ) {
+      return null;
+    }
+    var refW = typeof raw.refW === 'number' && isFinite(raw.refW) && raw.refW >= 0 ? raw.refW : 0;
+    var refH = typeof raw.refH === 'number' && isFinite(raw.refH) && raw.refH >= 0 ? raw.refH : 0;
+    var idx = typeof raw.index === 'number' && isFinite(raw.index) && raw.index >= 0 ? Math.floor(raw.index) : 0;
+    return {
+      line: typeof raw.line === 'string' ? raw.line.slice(0, 32) : '',
+      tag: typeof raw.tag === 'string' ? raw.tag.slice(0, 16) : '',
+      index: idx,
+      textHash: typeof raw.textHash === 'string' ? raw.textHash.slice(0, 16) : '',
+      refX: raw.refX,
+      refY: raw.refY,
+      refW: refW,
+      refH: refH
+    };
   }
 
   function sanitizeStrokes(list) {
@@ -2706,6 +3069,7 @@
       if (typeof color !== 'string' || (color !== 'adaptive' && !/^#[0-9a-f]{3,8}$/i.test(color))) continue;
       if (typeof s.width !== 'number' || !isFinite(s.width) || s.width <= 0 || s.width > 64) continue;
       var opacity = typeof s.opacity === 'number' && isFinite(s.opacity) ? Math.max(0.05, Math.min(1, s.opacity)) : 1;
+      var anchor = sanitizeAnchor(s.anchor);
 
       if (kind === 'freehand') {
         if (!Array.isArray(s.points) || s.points.length === 0) continue;
@@ -2717,11 +3081,15 @@
           }
         }
         if (pts.length > 0) {
-          valid.push({ kind: 'freehand', tool: tool, color: color, width: s.width, opacity: opacity, points: pts });
+          var freeObj = { kind: 'freehand', tool: tool, color: color, width: s.width, opacity: opacity, points: pts };
+          if (anchor) {
+            freeObj.anchor = anchor;
+          }
+          valid.push(freeObj);
         }
       } else {
         if (!isValidPoint(s.start) || !isValidPoint(s.end)) continue;
-        valid.push({
+        var shapeObj = {
           kind: kind,
           tool: tool,
           color: color,
@@ -2729,7 +3097,11 @@
           opacity: opacity,
           start: { x: s.start.x, y: s.start.y },
           end: { x: s.end.x, y: s.end.y }
-        });
+        };
+        if (anchor) {
+          shapeObj.anchor = anchor;
+        }
+        valid.push(shapeObj);
       }
     }
     return valid;
@@ -2852,6 +3224,7 @@
     state.redoStack = [];
     state.strokes = state.autoSave ? loadDocStrokesForKey(currentDocKey) : [];
     clearSelection();
+    reconcileStrokesToAnchors();
     renderStaticCanvas();
     renderLiveCanvas();
     updateUI();
@@ -2936,6 +3309,7 @@
         pushUndoSnapshot(state.strokes.slice());
         state.strokes = imported;
         clearSelection();
+        reconcileStrokesToAnchors();
         renderStaticCanvas();
         renderLiveCanvas();
         updateUI();
